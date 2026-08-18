@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-08-19 03:11:16 - 新增功能（技术设计文档）
+
+- **变更概述**：新增 `docs/design.md`，明确第一阶段 Fabric 项目骨架的包结构、领域模型、接口契约、模块职责、线程规则与 UI 素材方案。
+- **修改文件**：
+  - `docs/design.md`（新增）
+  - `docs/minecraft-fabric-music-mod-development-document.md`（迁入）
+  - `docs/netease-cloud-music-api-integration-requirements.md`（迁入）
+  - `CHANGELOG.md`
+- **变更内容**：
+  - 将 `docs` 目录从工作区根目录迁入本工程；
+  - 固定技术栈基线：Minecraft 26.2、Fabric Loader 0.19.3、Fabric API 0.158.0+26.2、Loom 1.17-SNAPSHOT、JDK 25、默认 Yarn 映射；
+  - 采用 split source set + 纯客户端结构，`src/main` 承载 model/provider/auth 契约，`src/client` 承载客户端实现；
+  - 逐类定义领域模型、Provider 接口、认证、播放、同步、缓存与 UI 类的字段和方法签名；
+  - 确定 UI 直接引用 Minecraft 原版 `assets/minecraft/textures/gui/` 素材，不打包自定义贴图。
+
 ## 2026-08-19 01:17:31 - 修复问题
 
 - **变更概述**：修复 IntelliJ IDEA 缺少 `Minecraft Client` / `Minecraft Server` 启动配置的问题。
