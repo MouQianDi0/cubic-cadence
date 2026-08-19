@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-08-20 00:37:42 - 修复问题（暂停失效、二维码返回主页入口与退出二次确认）
+
+- **变更概述**：修复本地音乐暂停后返回游戏仍继续播放的问题；为二维码登录页新增「返回主页」按钮；退出登录增加二次确认。
+- **修改文件**：
+  - `src/client/java/com/cubiccadence/client/playback/AudioEngine.java`
+  - `src/client/java/com/cubiccadence/client/ui/screen/LoginQrScreen.java`
+  - `src/client/java/com/cubiccadence/client/ui/screen/MusicLibraryScreen.java`
+  - `src/client/resources/assets/cubic-cadence/lang/zh_cn.json`、`en_us.json`
+- **变更内容**：
+  - `AudioEngine.tick()`：当 `state == PAUSED` 且当前 channel 存在时，每帧重新执行 `handle.execute(Channel::pause)`。`Channel.pause()` 内部只在 `AL_PLAYING` 时真正暂停、已是 `PAUSED` 时为 no-op，因此能在一帧内纠正因异步竞态或 SoundEngine 全局恢复导致的「状态显示暂停但底层仍在播放」，同时不影响正常恢复；
+  - `LoginQrScreen`：新增「返回主页」按钮（`button.cubic-cadence.back`），与「重新获取二维码」并排，点击复用 `returnToLibrary()`；关闭（ESC）仍走 `returnToLibrary()`，实现等待授权时随时回主页继续等待；
+  - `MusicLibraryScreen`：`SIGNED_IN` 时点击登录按钮改为弹出原版 `ConfirmScreen` 二次确认，确认后才 `audioEngine.stop()` 并 `logout()`；确认或取消后均回到音乐库主页；
+  - 语言文件：新增 `button.cubic-cadence.back` 与 `confirm.cubic-cadence.logout_title/message/confirm/cancel`。
+- **风险**：`tick()` 在 `PAUSED` 期间每帧提交一个异步 `pause` Consumer，开销极小；`Channel.pause()` 的 `PLAYING` 检查保证不会误伤正常恢复。返回主页与 ESC 共用 `returnToLibrary()`，靠 `navigated` 防重复跳转。
+- **验证**：`compileJava/compileClientJava/compileTestJava/test` 全部通过；中英文语言 JSON 校验通过。暂停与退出确认的真实游戏内交互需运行游戏实例人工确认。
+
 ## 2026-08-19 23:43:18 - 修复问题（登录体验优化：等待反馈、速度与返回主页）
 
 - **变更概述**：优化网易云二维码登录体验。将扫码后轮询间隔从 2 秒降到 1 秒、缩短请求/连接超时；暴露「已扫码待确认」状态并在主页/二维码页显示；二维码垂直居中并加生成动画；移除不能独立完成登录的「在浏览器打开」按钮；授权成功或关闭二维码页时返回「音乐库」主页继续等待。

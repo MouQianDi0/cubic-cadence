@@ -232,6 +232,13 @@ public class AudioEngine implements AutoCloseable {
             this.currentInstance = null;
             this.state = PlaybackState.ENDED;
             this.pausedAtNanos = 0L;
+            return;
+        }
+        if (this.state == PlaybackState.PAUSED) {
+            ChannelAccess.ChannelHandle handle = currentHandle();
+            if (handle != null) {
+                handle.execute(Channel::pause);
+            }
         }
     }
 

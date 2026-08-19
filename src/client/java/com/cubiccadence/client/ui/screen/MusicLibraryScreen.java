@@ -15,6 +15,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.Checkbox;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
@@ -208,9 +209,7 @@ public class MusicLibraryScreen extends Screen {
     private void handleAuthAction() {
         AuthState authState = this.authManager.getState();
         if (authState == AuthState.SIGNED_IN) {
-            this.audioEngine.stop();
-            this.authManager.logout();
-            updateAuthControls();
+            openLogoutConfirmation();
             return;
         }
         if (authState == AuthState.REFRESHING) {
@@ -218,6 +217,23 @@ public class MusicLibraryScreen extends Screen {
         }
         this.minecraft.setScreenAndShow(new LoginQrScreen());
         updateAuthControls();
+    }
+
+    private void openLogoutConfirmation() {
+        this.minecraft.setScreenAndShow(new ConfirmScreen(
+                confirmed -> {
+                    if (confirmed) {
+                        this.audioEngine.stop();
+                        this.authManager.logout();
+                    }
+                    this.minecraft.setScreenAndShow(this);
+                    updateAuthControls();
+                },
+                Component.translatable("confirm.cubic-cadence.logout_title"),
+                Component.translatable("confirm.cubic-cadence.logout_message"),
+                Component.translatable("confirm.cubic-cadence.logout_confirm"),
+                Component.translatable("confirm.cubic-cadence.logout_cancel")
+        ));
     }
 
     private void updateAuthControls() {

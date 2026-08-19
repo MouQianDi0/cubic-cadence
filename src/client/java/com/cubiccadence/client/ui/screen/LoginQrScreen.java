@@ -30,6 +30,7 @@ public class LoginQrScreen extends Screen {
     private final AuthManager authManager;
     private volatile BitMatrix qrMatrix;
     private volatile String encodedContent;
+    private Button backButton;
     private Button regenerateButton;
     private int loadingTicks;
     private boolean navigated;
@@ -42,12 +43,20 @@ public class LoginQrScreen extends Screen {
     @Override
     protected void init() {
         int centerX = this.width / 2;
+        this.backButton = this.addRenderableWidget(
+                Button.builder(
+                                Component.translatable("button.cubic-cadence.back"),
+                                button -> returnToLibrary()
+                        )
+                        .bounds(centerX - 108, this.height - 36, 104, Button.DEFAULT_HEIGHT)
+                        .build()
+        );
         this.regenerateButton = this.addRenderableWidget(
                 Button.builder(
                                 Component.translatable("button.cubic-cadence.regenerate_qr"),
                                 button -> regenerate()
                         )
-                        .bounds(centerX - 52, this.height - 36, 104, Button.DEFAULT_HEIGHT)
+                        .bounds(centerX + 4, this.height - 36, 104, Button.DEFAULT_HEIGHT)
                         .build()
         );
         ensureAuthorization();
