@@ -1,7 +1,9 @@
 package com.cubiccadence.client.playback;
 
+import java.io.IOException;
+
 public interface AudioDecoder {
     boolean supports(String contentType);
 
-    // TODO: define the PCM decode input/output contract
+    DecodedAudio decode(byte[] encodedBytes) throws IOException;
 }

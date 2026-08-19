@@ -1,5 +1,35 @@
 # Changelog
 
+## 2026-08-19 12:24:10 - 新增功能（阶段 2 本地音频播放与原版音乐独立控制）
+
+- **变更概述**：完成阶段 2 本地 WAV 音频播放验证，将方律音乐接入 Minecraft 26.2 现有 `SoundManager`/`SoundEngine`/OpenAL 输出链，并增加播放、暂停、继续、停止、状态/时长、方律独立音量、原版音乐音量及快速禁用原版背景音乐控件；方律音乐不接管 `MusicManager.currentMusic`，可与原版声音并行播放。
+- **修改文件**：
+  - 修改 `src/client/java/com/cubiccadence/client/CubicCadenceClient.java`
+  - 修改 `src/client/java/com/cubiccadence/client/config/ModConfig.java`
+  - 修改 `src/client/java/com/cubiccadence/client/playback/AudioDecoder.java`
+  - 修改 `src/client/java/com/cubiccadence/client/playback/AudioEngine.java`
+  - 新增 `src/client/java/com/cubiccadence/client/playback/DecodedAudio.java`
+  - 新增 `src/client/java/com/cubiccadence/client/playback/WaveAudioDecoder.java`
+  - 新增 `src/client/java/com/cubiccadence/client/playback/LocalMusicSoundInstance.java`
+  - 新增 `src/client/java/com/cubiccadence/client/mixin/CheckboxAccessor.java`
+  - 新增 `src/client/java/com/cubiccadence/client/mixin/SoundManagerAccessor.java`
+  - 新增 `src/client/java/com/cubiccadence/client/mixin/SoundEngineAccessor.java`
+  - 新增 `src/client/java/com/cubiccadence/client/mixin/SoundBufferLibraryAccessor.java`
+  - 修改 `src/client/java/com/cubiccadence/client/ui/screen/MusicLibraryScreen.java`
+  - 新增 `src/client/resources/cubic-cadence.client.mixins.json`
+  - 新增 `src/client/resources/assets/cubic-cadence/audio/test-audio.wav`
+  - 修改 `src/client/resources/assets/cubic-cadence/lang/zh_cn.json`
+  - 修改 `src/client/resources/assets/cubic-cadence/lang/en_us.json`
+  - 修改 `src/main/resources/fabric.mod.json`
+  - 修改 `docs/design.md`
+  - 修改 `CHANGELOG.md`
+- **变更内容**：
+  - 在受控单线程执行器中读取并将 WAV 解码为 16-bit 小端 PCM，通过 Mixin Accessor 注入原版 `SoundBufferLibrary`，由 Minecraft 自己的 Channel 与 OpenAL 设备输出；客户端退出时停止实例并关闭解码执行器；
+  - `LocalMusicSoundInstance` 使用 `SoundSource.MASTER`、相对监听者和无距离衰减设置，最终音量为“Minecraft 主音量 × 方律音量”，不受原版 `MUSIC` 滑块影响；
+  - 音乐界面提供播放/暂停/继续/停止按钮、播放状态和时长、方律独立音量滑块；关闭界面后音乐继续播放；
+  - 增加“禁用原版背景音乐”复选框和原版音乐音量滑块：勾选只把原版 `MUSIC` 音量设为 0，不停止或替换 `MusicManager`；取消时恢复最近一次非零值，滑块与复选框双向同步并通过原版 `OptionInstance` 即时刷新；
+  - 补充客户端 Mixin 配置、中英文文本和阶段 2 音频共存设计说明；当前本地测试音频约 3 秒，在线长音频和进度跳转留待流式解码阶段。
+
 ## 2026-08-19 04:15:25 - 新增功能（第一阶段基础框架重建）
 
 - **变更概述**：工作区被还原至模板状态后，按 `docs/design.md` 第 9 节重新落地第一阶段 Fabric 项目骨架，并一并在落地时包含此前确认的三项 UI 修复，实现可编译、可运行、按 `M` 键打开/关闭音乐主界面的纯客户端 Mod，业务逻辑以 `TODO` 占位。

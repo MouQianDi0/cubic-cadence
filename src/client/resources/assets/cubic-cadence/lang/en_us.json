@@ -1,0 +1,18 @@
+{
+  "key.cubic-cadence.open_library": "Open Music Library",
+  "button.cubic-cadence.play": "Play",
+  "button.cubic-cadence.pause": "Pause",
+  "button.cubic-cadence.resume": "Resume",
+  "button.cubic-cadence.loading": "Loading…",
+  "button.cubic-cadence.stop": "Stop",
+  "slider.cubic-cadence.volume": "Cubic Cadence Volume %s%%",
+  "slider.cubic-cadence.vanilla_music_volume": "Vanilla Music Volume %s%%",
+  "checkbox.cubic-cadence.disable_vanilla_music": "Disable Vanilla Background Music",
+  "label.cubic-cadence.local_test_track": "Local Test Audio",
+  "status.cubic-cadence.idle": "Ready",
+  "status.cubic-cadence.loading": "Reading and decoding audio",
+  "status.cubic-cadence.playing": "Playing alongside vanilla audio",
+  "status.cubic-cadence.paused": "Paused",
+  "status.cubic-cadence.ended": "Playback finished",
+  "status.cubic-cadence.error": "Playback failed; check the log"
+}

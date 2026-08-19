@@ -164,6 +164,27 @@ src/client/java/com/cubiccadence/client/
 - 搜索框使用原版输入框 sprite 与 `search` 图标；
 - 入口图标优先使用 `music_notes.png`，保持原版观感。
 
+### 5.5 阶段 2 音频共存与音量控制
+
+阶段 2 的本地测试音频复用 Minecraft 现有的 `SoundManager -> SoundEngine -> SoundBuffer -> OpenAL` 输出链，不创建第二套 OpenAL 设备或上下文，也不写入、替换或停止 `MusicManager.currentMusic`。因此方律音乐是独立声音实例，能够与原版背景音乐、环境音和游戏音效并行播放。
+
+方律音乐实例使用 `SoundSource.MASTER`，但只读取该分类对应的主音量乘数；Mod 自身音量由方律滑块控制。原版背景音乐仍使用 `SoundSource.MUSIC`。最终关系为：
+
+| 输出 | 最终音量 |
+| --- | --- |
+| 原版背景音乐 | Minecraft 主音量 × 原版音乐音量 × 原版环境淡入淡出系数 |
+| 方律音乐 | Minecraft 主音量 × 方律音量 |
+| 其他游戏声音 | Minecraft 主音量 × 对应声音分类音量 |
+
+音乐主界面同时提供以下控制：
+
+- “禁用原版背景音乐”复选框：将原版 `MUSIC` 选项设为 0，但不停止 `MusicManager`，取消勾选时恢复最近一次非零音量；
+- “原版音乐音量”滑块：直接绑定 Minecraft 原生 `OptionInstance<Double>`，即时刷新原版声音引擎；
+- “方律音量”滑块：只调整当前及后续方律音乐实例，不修改任何原版分类；
+- 原版音乐滑块拖到 0 时复选框同步勾选；取消复选框时恢复此前的非零值。
+
+阶段 2 采用合法的短 WAV 文件和整段 PCM 静态缓冲，只用于隔离验证解码、输出和生命周期。在线长音频必须在后续阶段改为有限大小的流式缓冲队列；进度跳转也随流式解码阶段实现。
+
 ## 6. 线程模型与异步约定
 
 ### 6.1 禁止事项
@@ -571,7 +592,7 @@ public class PlaybackQueue {
 // AudioDecoder.java
 public interface AudioDecoder {
     boolean supports(String contentType);
-    // TODO: 定义 PCM 解码输入输出契约
+    DecodedAudio decode(byte[] encodedBytes) throws IOException;
 }
 
 // AudioEngine.java
