@@ -208,13 +208,10 @@ src/client/java/com/cubiccadence/client/
 
 | 凭证 | 归属 | 存放位置 |
 | --- | --- | --- |
-| App ID | Mod 应用 | 按平台规则确定 |
-| Private Key | Mod 开发者 | 后端或本机安全开发环境，不进入 JAR |
-| Access Token | 玩家 | 安全存储，禁止日志输出 |
-| Refresh Token | 玩家 | 安全存储，禁止日志输出 |
+| 网易云 Cookie | 玩家 | DPAPI 加密存储，禁止日志输出 |
 | 临时播放地址 | 播放期间 | 仅内存短期使用，不持久化 |
 
-第一阶段 `SecureTokenStore` 只定义接口，具体实现使用操作系统安全凭据存储或最小权限的本地文件；日志统一脱敏，禁止输出 Token、Private Key 与完整播放地址。
+阶段 3 在 Windows 首期范围内使用 DPAPI 加密网易云 Cookie 会话，文件为 `config/cubic-cadence/auth-session.dpapi`。Mod 直连自建的 `api-enhanced` 服务，不再持有开发者 Private Key；日志统一脱敏，禁止输出 Cookie 与完整播放地址。
 
 ## 8. 错误处理与状态机
 
@@ -536,7 +533,7 @@ public class AuthManager {
 }
 ```
 
-第一阶段 `AuthManager` 只维护状态机与占位实现，不发起真实授权请求。
+阶段 3 的 `AuthManager` 已实现授权挑战、后台轮询、会话恢复、到期前单次刷新、退出清理和错误状态。由于网易云官方对个人开发者不支持多用户 API，项目已决策改用第三方逆向库 `NeteaseCloudMusicApiEnhanced/api-enhanced` 作为数据来源：客户端直连自建服务，会话改为 Cookie 模型，原 Spring Boot 后端已废弃删除；该方案非官方授权，存在合规与随时失效风险。
 
 ### 9.7 网易云 Provider（`src/client/java/com/cubiccadence/client/provider/netease/`）
 
@@ -704,14 +701,14 @@ public class MusicLibraryScreen extends Screen {
 | `MusicProvider.search()` | NCM-SEARCH-001 至 NCM-SEARCH-003 |
 | `MusicProvider.resolvePlaybackSource()` | NCM-PLAY-001、NCM-PLAY-002 |
 
-正式编码接入网易云前，必须完成接口需求文档第 15 节的官方逐项核实。
+网易云多用户 API 已因个人开发者限制而放弃官方接入，改走 `NeteaseCloudMusicApiEnhanced/api-enhanced` 逆向库；编码时以该库实际接口为准，并保留本段所述合规风险提示。
 
 ## 11. 后续阶段路线
 
 1. 阶段 0：开放平台能力验证（授权方式、Scope、播放权益与播放源）。
 2. 阶段 1：本骨架落地并验收「可启动、可打开/关闭界面」。
 3. 阶段 2：本地音频播放验证（OpenAL 与解码库）。
-4. 阶段 3：网易云登录与令牌生命周期。
+4. 阶段 3：网易云登录与令牌生命周期（客户端直连 `api-enhanced` 服务，会话改为 Cookie 模型）。
 5. 阶段 4：歌单同步与音乐库。
 6. 阶段 5：在线歌曲播放。
 7. 阶段 6：稳定性与发布准备。

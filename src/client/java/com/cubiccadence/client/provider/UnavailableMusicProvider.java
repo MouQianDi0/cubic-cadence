@@ -1,4 +1,4 @@
-package com.cubiccadence.client.provider.netease;
+package com.cubiccadence.client.provider;
 
 import com.cubiccadence.auth.AuthSession;
 import com.cubiccadence.auth.AuthorizationChallenge;
@@ -14,76 +14,63 @@ import com.cubiccadence.provider.SearchPage;
 import com.cubiccadence.provider.SearchType;
 
 import java.util.List;
-import java.net.URI;
 import java.util.concurrent.CompletableFuture;
 
-public class NeteaseMusicProvider implements MusicProvider {
-    public static final String PROVIDER_ID = "netease";
-
-    private final NeteaseApiClient apiClient;
-    private final NeteaseAuthClient authClient;
-
-    public NeteaseMusicProvider(URI apiEnhancedBaseUri) {
-        this.apiClient = new NeteaseApiClient();
-        this.authClient = new NeteaseAuthClient(apiEnhancedBaseUri);
-    }
-
+/** Fail-closed provider used until an api-enhanced base URL has been configured. */
+public final class UnavailableMusicProvider implements MusicProvider {
     @Override
     public String id() {
-        return PROVIDER_ID;
+        return "netease";
     }
 
     @Override
     public CompletableFuture<AuthorizationChallenge> beginLogin() {
-        return authClient.beginLogin();
+        return unavailable();
     }
 
     @Override
     public CompletableFuture<AuthorizationResult> pollAuthorization(String authorizationId) {
-        return authClient.pollAuthorization(authorizationId);
+        return unavailable();
     }
 
     @Override
     public CompletableFuture<AuthSession> refresh(AuthSession session) {
-        return authClient.refresh(session);
+        return unavailable();
     }
 
     @Override
     public CompletableFuture<UserProfile> getCurrentUser() {
-        // TODO: implement NCM-USER-001
-        return unsupported();
+        return unavailable();
     }
 
     @Override
     public CompletableFuture<List<PlaylistSummary>> getUserPlaylists() {
-        // TODO: implement NCM-LIB-001 / NCM-LIB-002
-        return unsupported();
+        return unavailable();
     }
 
     @Override
     public CompletableFuture<PlaylistPage> getPlaylistTracks(String playlistId, PageRequest pageRequest) {
-        // TODO: implement NCM-LIB-003 / NCM-LIB-004 / NCM-TRACK-001
-        return unsupported();
+        return unavailable();
     }
 
     @Override
     public CompletableFuture<SearchPage<?>> search(String keyword, SearchType type, PageRequest pageRequest) {
-        // TODO: implement NCM-SEARCH-001 to NCM-SEARCH-003
-        return unsupported();
+        return unavailable();
     }
 
     @Override
     public CompletableFuture<PlaybackSource> resolvePlaybackSource(String trackId, AudioQuality quality) {
-        // TODO: implement NCM-PLAY-001 / NCM-PLAY-002
-        return unsupported();
+        return unavailable();
     }
 
     @Override
     public CompletableFuture<Void> logout(AuthSession session) {
-        return authClient.logout(session);
+        return CompletableFuture.completedFuture(null);
     }
 
-    private static <T> CompletableFuture<T> unsupported() {
-        return CompletableFuture.failedFuture(new UnsupportedOperationException("netease provider not implemented"));
+    private static <T> CompletableFuture<T> unavailable() {
+        return CompletableFuture.failedFuture(
+                new IllegalStateException("api-enhanced service is not configured")
+        );
     }
 }

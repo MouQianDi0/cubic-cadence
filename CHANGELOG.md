@@ -1,9 +1,89 @@
 # Changelog
 
+## 2026-08-19 22:43:46 - 重构（客户端直连 api-enhanced，废弃 Spring Boot 后端）
+
+- **变更概述**：按已确认的方案 A，废弃 Spring Boot 后端与官方适配器，Mod 直连自建的 `api-enhanced` 服务；鉴权模型从 accessToken/refreshToken 改为网易云 Cookie，二维码登录改为 api-enhanced 的 `/login/qr/key`、`/login/qr/create`、`/login/qr/check` 三步。
+- **修改文件**：
+  - 删除 `backend/` 整个目录、`docs/auth-gateway-openapi.yaml`、`docs/demo.zip`；
+  - 修改 `src/main/java/com/cubiccadence/auth/AuthSession.java`（accessToken/refreshToken → cookie）；
+  - 重写 `src/client/java/com/cubiccadence/client/provider/netease/NeteaseAuthClient.java`（直连 api-enhanced 二维码登录、刷新、退出）；
+  - 修改 `src/client/java/com/cubiccadence/client/config/ModConfig.java`（authGatewayBaseUrl → apiEnhancedBaseUrl）、`CubicCadenceClient.java`、`NeteaseMusicProvider.java`、`UnavailableMusicProvider.java`；
+  - 修改 `src/test/.../AuthManagerTest.java`、`WindowsDpapiTokenStoreTest.java` 适配 Cookie 模型；
+  - 修改 `README.md`、`docs/design.md`、`docs/minecraft-fabric-music-mod-development-document.md`、`docs/netease-cloud-music-api-integration-requirements.md`；
+  - 修改 `CHANGELOG.md`。
+- **变更内容**：
+  - `AuthSession` 只保留 `providerId`、`cookie`、`expiresAtEpochMs`；`expiresAtEpochMs` 在登录/刷新成功时填保守的 7 天默认值用于触发定时刷新；
+  - `NeteaseAuthClient` 直连 api-enhanced：`/login/qr/key` 取 unikey、`/login/qr/create` 取二维码 URL、`/login/qr/check` 轮询（`code` 801 等待 / 802 已扫码 / 803 成功并返回 Cookie / 800 过期）、`/login/refresh` 用 Cookie 续期、`/logout` 退出；
+  - 客户端通过 `apiEnhancedBaseUrl` 配置 api-enhanced 服务地址，不再持有开发者私钥或官方令牌；
+  - 保留 `NeteaseApiClient` 为空实现，业务端点（搜索/歌单/播放）留待阶段 4。
+- **风险**：api-enhanced 为逆向第三方服务，需自行部署并常驻运行；接口可能随上游变化。Cookie 无权威过期时间，7 天为保守默认值，实际以 api-enhanced 返回为准。
+- **验证**：客户端 `compileJava/compileClientJava/compileTestJava/test` 通过；后端因已废弃不再参与构建。
+
+## 2026-08-19 21:08:39 - 变更决策（网易云数据源改为第三方逆向库）
+
+- **变更概述**：因网易云官方对个人开发者不支持多用户 Open API（仅开放 `ncm-cli`，厂商接入需联系商务），将数据源从官方多用户 API 改为第三方逆向库 `NeteaseCloudMusicApiEnhanced/api-enhanced`，并同步更新相关文档。
+- **修改文件**：
+  - `docs/netease-cloud-music-api-integration-requirements.md`
+  - `docs/minecraft-fabric-music-mod-development-document.md`
+  - `docs/design.md`
+  - `README.md`
+  - `CHANGELOG.md`
+- **变更内容**：
+  - 在接口需求文档中移除「正式编码前不得根据非官方逆向接口补全端点」「不会使用 Binaryify、NeteaseCloudMusicApi Enhanced 或其他逆向接口」的旧边界，改为明确记录采用 `api-enhanced` 作为数据来源；
+  - 新增风险提示：该库逆向网易云未公开私有接口，非官方授权，公开发布存在账号封禁、服务条款与法律合规风险，接口无稳定性承诺、可能随时失效；
+  - 同步更新开发文档、设计文档和 README 中的接入方式与阶段路线描述；
+  - 本次仅改文档，代码从官方适配器切换到 `api-enhanced` 的落地工作尚未执行，后续单独规划。
+- **风险与边界**：本变更属团队在「个人开发者无法接入官方多用户 API」前提下的知情决策，不应对外描述为网易云官方认可的实现；公开发布前需重新评估合规风险。
+
+## 2026-08-19 20:15:01 - 新增功能（网易云官方适配器与游戏内登录二维码）
+
+- **变更概述**：按网易云开放平台官方 demo 与 API 文档，实现真实后端认证适配器（RSA-SHA256 签名、匿名登录、二维码获取、状态轮询、令牌刷新），并在游戏内新增独立登录二维码弹窗，玩家无需离开游戏即可扫码授权。
+- **修改文件**：
+  - 后端新增 `NeteaseSigner.java`、`NeteaseOpenApiClient.java`、`ConfiguredNeteaseOfficialAuthAdapter.java`、`NeteaseAuthAdapterConfiguration.java` 及 `NeteaseSignerTest.java`；
+  - 后端修改 `NeteaseOfficialAuthAdapter.java`、`UnconfiguredNeteaseOfficialAuthAdapter.java`、`AuthGatewayService.java`、`AuthGatewayController.java`、`RefreshSessionRequest.java`、`application.yml`、`.env.example`、`README.md`；
+  - 客户端新增 `LoginQrScreen.java`；修改 `build.gradle`、`NeteaseAuthClient.java`、`MusicLibraryScreen.java` 及中英文语言文件；
+  - 修改 `docs/auth-gateway-openapi.yaml`。
+- **变更内容**：
+  - 按官方 demo 实现 RSA-SHA256 签名：除 `sign` 外的参数按 key 字典序拼接，用 PKCS#8 私钥做 `SHA256withRSA` 签名并 Base64，作为 `sign`；GET 请求中 `device`、`bizContent`、`sign` 额外做一次 URL 编码；
+  - 实现四个官方端点：匿名登录 `/openapi/music/basic/oauth2/login/anonymous`、获取二维码 `/openapi/music/basic/user/oauth2/qrcodekey/get/v2`、轮询 `/openapi/music/basic/oauth2/device/login/qrcode/get`、刷新 `/openapi/music/basic/user/oauth2/token/refresh/v2`；
+  - 轮询状态 `800/801/802/803/804` 映射到 `EXPIRED/PENDING/SCANNED/AUTHORIZED/EXPIRED`，并保留 `1406/1407/1408` 令牌异常语义说明；
+  - 仅当 `NCM_APP_ID`、`NCM_APP_SECRET`、`NCM_PRIVATE_KEY` 全部注入时才启用真实适配器，否则仍 fail-closed（`ready=false`、返回 HTTP 503）；
+  - `refresh` 契约新增 `accessToken` 字段，因为网易云刷新接口需要旧 accessToken 参与；
+  - 客户端引入 ZXing core，新增 `LoginQrScreen` 独立弹窗：游戏内渲染授权二维码、实时显示授权状态、授权成功自动关闭，并保留“在浏览器打开”和“重新获取二维码”按钮；
+  - 登录动作由跳转系统浏览器改为打开游戏内二维码弹窗。
+- **验证**：后端 `test` 通过（含签名“签名→验签”自检、PEM 私钥解析、字典序拼接）；客户端 `compileJava/compileClientJava/test` 通过。真实扫码联调需真实凭据，本轮未执行。
+
+## 2026-08-19 18:55:00 - 新增功能（阶段 3 登录客户端与公开发布后端边界）
+
+- **变更概述**：实现 Mod 侧无密码浏览器授权状态机、Windows DPAPI 会话持久化、自动刷新与退出清理，并新增独立认证网关工程和 OpenAPI 契约；由于当前没有可审查的网易云官方服务端接入文档，网关的官方适配器保持 fail-closed，未伪造私有接口或把 `privateKey` 放进 Mod。
+- **修改文件**：
+  - 修改 `.gitignore`、`README.md`、`build.gradle`、`docs/design.md`、`docs/minecraft-fabric-music-mod-development-document.md`、`docs/netease-cloud-music-api-integration-requirements.md`；新增 `docs/auth-gateway-openapi.yaml`；
+  - 修改 `src/main/java/com/cubiccadence/auth/AuthSession.java`、`src/main/java/com/cubiccadence/provider/MusicProvider.java`；新增 `AuthorizationChallenge.java`、`AuthorizationResult.java`、`AuthorizationStatus.java`；
+  - 修改 `src/client/java/com/cubiccadence/client/CubicCadenceClient.java`、`auth/AuthManager.java`、`config/ModConfig.java`、`provider/netease/NeteaseAuthClient.java`、`provider/netease/NeteaseMusicProvider.java`、`ui/screen/MusicLibraryScreen.java` 及中英文语言文件；新增 `auth/WindowsDpapiTokenStore.java`、`provider/UnavailableMusicProvider.java`；
+  - 新增 `src/test/` 下 AuthManager 与 DPAPI 令牌存储测试；新增独立 `backend/` Spring Boot 认证网关工程、测试、容器配置与部署说明；修改 `CHANGELOG.md`。
+- **变更内容**：
+  - `AuthManager` 实现 `SIGNED_OUT/AUTHORIZING/SIGNED_IN/REFRESHING/EXPIRED/ERROR` 状态流转、授权轮询、启动恢复、到期前五分钟自动刷新、并发操作失效保护及退出本地清理；登录界面显示状态并使用系统浏览器打开 HTTPS 授权页，用户不向 Mod 输入或提供网易云密码；
+  - Mod 仅保存项目网关签发的短期访问令牌和轮换刷新令牌，并使用当前 Windows 用户的 DPAPI 加密后原子写入配置目录；网关地址配置不含密钥，非本机 HTTP 地址被拒绝，响应大小、超时和重定向均受限制；
+  - `backend/` 定义授权创建/轮询、会话刷新/撤销和 readiness 边界，`appId/privateKey` 仅允许由后端环境变量注入；未配置经审查的官方适配器时所有认证入口返回不可用，防止公开版本误用逆向私有协议；
+  - 验证根工程与后端测试通过，覆盖登录持久化、有效会话恢复、临期刷新、远端撤销失败时的本地退出以及 DPAPI 密文不含明文令牌。
+
+## 2026-08-19 17:38:25 - 新增功能（配置持久化与音量/格式记忆）
+
+- **变更概述**：将方律音量和本地测试音频格式选项持久化到 `config/cubic-cadence.json`，使退出游戏重进后音量保持不变，退出音乐菜单再进入后格式选项保持上次选择。
+- **修改文件**：
+  - 修改 `src/client/java/com/cubiccadence/client/config/ModConfig.java`
+  - 修改 `src/client/java/com/cubiccadence/client/CubicCadenceClient.java`
+  - 修改 `src/client/java/com/cubiccadence/client/ui/screen/MusicLibraryScreen.java`
+  - 修改 `CHANGELOG.md`
+- **变更内容**：
+  - `ModConfig` 由内存单例扩展为 JSON 持久化配置，使用 Gson 读写 Fabric 配置目录下的 `cubic-cadence.json`，字段包含 `volume`、`hudEnabled`、`audioQuality` 与 `lastTestTrackIndex`；读取时对缺失文件、JSON 损坏、非法枚举值做兜底并回退默认值，不影响游戏启动；
+  - 音量与格式选项在变更时立即保存，并在客户端退出时兜底保存；`MusicLibraryScreen` 构造时从配置恢复格式选项，切换格式时写回配置，退出菜单再进入仍保持上次选择；
+
 ## 2026-08-19 17:12:37 - 优化代码（移除 M4A/AAC 音频支持）
 
 - **变更概述**：按需求移除用不到的 M4A（含 MP4/AAC）音频支持，仅保留 WAV 与 MP3 解码能力，精简依赖与测试资源。
-- **修改文件**：
+
+* **修改文件**：
   - 修改 `build.gradle`
   - 修改 `src/client/java/com/cubiccadence/client/playback/JavaSoundAudioDecoder.java`
   - 修改 `src/client/java/com/cubiccadence/client/CubicCadenceClient.java`
@@ -11,7 +91,7 @@
   - 删除 `src/client/resources/assets/cubic-cadence/audio/test-audio.m4a`
   - 修改 `docs/design.md`
   - 修改 `CHANGELOG.md`
-- **变更内容**：
+* **变更内容**：
   - 从 `build.gradle` 移除 `javasound-aac` 与 `javasound-resloader` 的 implementation 与 include，仅保留 `javasound-mp3` 与 `tritonus-share`；
   - `JavaSoundAudioDecoder` 删除 AAC/MP4 解码分支、AAC 格式魔数识别、AAC 字段与字节序翻转逻辑，`supports()` 仅保留 wav/wave/mpeg/mp3；
   - 移除 `CubicCadenceClient.LOCAL_TEST_AUDIO_M4A` 常量与 M4A 测试资源，音乐界面测试格式切换仅保留 WAV/MP3 两项；

@@ -1,10 +1,12 @@
 package com.cubiccadence.client.ui.screen;
 
 import com.cubiccadence.client.CubicCadenceClient;
+import com.cubiccadence.client.auth.AuthManager;
 import com.cubiccadence.client.config.ModConfig;
 import com.cubiccadence.client.mixin.CheckboxAccessor;
 import com.cubiccadence.client.playback.AudioEngine;
 import com.cubiccadence.model.PlaybackState;
+import com.cubiccadence.auth.AuthState;
 import net.minecraft.client.OptionInstance;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractSliderButton;
@@ -34,6 +36,8 @@ public class MusicLibraryScreen extends Screen {
     private static final String[] TEST_TRACK_LABELS = {"WAV", "MP3"};
 
     private final AudioEngine audioEngine;
+    private final AuthManager authManager;
+    private Button authButton;
     private Button playPauseButton;
     private Button stopButton;
     private Button formatButton;
@@ -45,6 +49,8 @@ public class MusicLibraryScreen extends Screen {
     public MusicLibraryScreen() {
         super(Component.literal("Cubic Cadence"));
         this.audioEngine = CubicCadenceClient.getAudioEngine();
+        this.authManager = CubicCadenceClient.getAuthManager();
+        this.testTrackIndex = ModConfig.getInstance().getLastTestTrackIndex() % TEST_TRACKS.length;
     }
 
     @Override
@@ -56,6 +62,12 @@ public class MusicLibraryScreen extends Screen {
         if (vanillaMusicVolume > MIN_AUDIBLE_VOLUME) {
             lastNonZeroVanillaMusicVolume = vanillaMusicVolume;
         }
+
+        this.authButton = this.addRenderableWidget(
+                Button.builder(authButtonMessage(), button -> handleAuthAction())
+                        .bounds(10, 10, 104, Button.DEFAULT_HEIGHT)
+                        .build()
+        );
 
         this.progressSlider = this.addRenderableWidget(new ProgressSlider(
                 (this.width - ProgressSlider.BAR_WIDTH) / 2,
@@ -122,12 +134,20 @@ public class MusicLibraryScreen extends Screen {
                 this.audioEngine
         ));
         updateControls();
+        updateAuthControls();
     }
 
     @Override
     public void extractRenderState(GuiGraphicsExtractor extractor, int mouseX, int mouseY, float tickDelta) {
         super.extractRenderState(extractor, mouseX, mouseY, tickDelta);
         extractor.centeredText(this.font, this.title, this.width / 2, 20, 0xFFFFFFFF);
+        extractor.centeredText(
+                this.font,
+                authStatusMessage(),
+                this.width / 2,
+                34,
+                this.authManager.getState() == AuthState.ERROR ? 0xFFFF6B6B : 0xFFBDBDBD
+        );
         extractor.centeredText(
                 this.font,
                 Component.translatable("label.cubic-cadence.local_test_track"),
@@ -159,6 +179,7 @@ public class MusicLibraryScreen extends Screen {
             this.progressSlider.syncFromEngine();
         }
         updateControls();
+        updateAuthControls();
     }
 
     @Override
@@ -181,6 +202,55 @@ public class MusicLibraryScreen extends Screen {
             this.minecraft.options.save();
         }
         super.onClose();
+    }
+
+    private void handleAuthAction() {
+        AuthState authState = this.authManager.getState();
+        if (authState == AuthState.SIGNED_IN) {
+            this.audioEngine.stop();
+            this.authManager.logout();
+            updateAuthControls();
+            return;
+        }
+        if (authState == AuthState.AUTHORIZING || authState == AuthState.REFRESHING) {
+            return;
+        }
+        this.minecraft.setScreenAndShow(new LoginQrScreen());
+        updateAuthControls();
+    }
+
+    private void updateAuthControls() {
+        if (this.authButton == null) {
+            return;
+        }
+        AuthState authState = this.authManager.getState();
+        this.authButton.setMessage(authButtonMessage());
+        this.authButton.active = authState != AuthState.AUTHORIZING && authState != AuthState.REFRESHING;
+        this.authManager.getLastError().ifPresentOrElse(
+                error -> this.authButton.setTooltip(Tooltip.create(Component.literal(error))),
+                () -> this.authButton.setTooltip(null)
+        );
+    }
+
+    private Component authButtonMessage() {
+        return switch (this.authManager.getState()) {
+            case SIGNED_IN -> Component.translatable("button.cubic-cadence.logout");
+            case AUTHORIZING -> Component.translatable("button.cubic-cadence.authorizing");
+            case REFRESHING -> Component.translatable("button.cubic-cadence.refreshing");
+            default -> Component.translatable("button.cubic-cadence.login");
+        };
+    }
+
+    private Component authStatusMessage() {
+        String suffix = switch (this.authManager.getState()) {
+            case SIGNED_OUT -> "signed_out";
+            case AUTHORIZING -> "authorizing";
+            case SIGNED_IN -> "signed_in";
+            case REFRESHING -> "refreshing";
+            case EXPIRED -> "expired";
+            case ERROR -> "error";
+        };
+        return Component.translatable("auth.cubic-cadence." + suffix);
     }
 
     private void handleVanillaMusicToggle(boolean disabled) {
@@ -236,10 +306,12 @@ public class MusicLibraryScreen extends Screen {
             default -> this.audioEngine.playLocal(TEST_TRACKS[this.testTrackIndex]);
         }
         updateControls();
+        updateAuthControls();
     }
 
     private void cycleTestTrack() {
         this.testTrackIndex = (this.testTrackIndex + 1) % TEST_TRACKS.length;
+        ModConfig.getInstance().setLastTestTrackIndex(this.testTrackIndex);
         this.audioEngine.stop();
         if (this.formatButton != null) {
             this.formatButton.setMessage(Component.literal(TEST_TRACK_LABELS[this.testTrackIndex]));

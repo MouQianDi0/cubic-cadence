@@ -38,7 +38,9 @@
 | 不可用 | 当前应用类型或 Scope 不允许调用 |
 | 替代实现 | 无独立接口，通过其他正式接口或返回字段实现 |
 
-当前所有接口能力默认状态为“待官方确认”。正式编码前不得根据非官方逆向接口补全端点。
+当前所有接口能力默认状态为“待官方确认”。
+
+> **2026-08-19 方案变更**：网易云官方 FAQ 明确「个人场景暂不支持多用户 API，仅可使用 ncm-cli；厂商入驻需联系云音乐商务」。项目因此放弃官方多用户服务端 API，改用第三方逆向库 `NeteaseCloudMusicApiEnhanced/api-enhanced` 作为数据来源。该库逆向网易云未公开接口，非官方授权，公开发布存在合规风险且接口可能随时失效，本方案为知情决策，不冒充官方开放平台正式接口。
 
 ## 3. 调用架构与安全边界
 
@@ -417,7 +419,7 @@ sequenceDiagram
 | --- | --- |
 | 官方接口名称 | 使用开放平台当前名称 |
 | 文档 ID 或链接 | 记录可追溯的官方来源 |
-| HTTP 方法与路径 | 不使用猜测或逆向端点 |
+| HTTP 方法与路径 | 以 `api-enhanced` 实际实现为准，并标注该来源为逆向非官方接口 |
 | 鉴权方式 | App 签名、用户 Token 或两者 |
 | 所需 Scope | 记录申请状态和审核条件 |
 | 请求字段 | 类型、必填性、长度和枚举 |
@@ -461,9 +463,23 @@ API 能力验证只有同时满足以下条件才算完成：
 - 根据真实字段更新 `MusicProvider` 和领域模型设计；
 - 文档中不存在未标注来源的推测性正式接口。
 
-## 17. 参考资料
+## 17. 2026-08-19 阶段 3 核验与实现状态
+
+已从网易官方 `@music163/ncm-cli` 0.1.6 包及网易官方 `NetEase/skills` 仓库确认：
+
+- 官方工具通过网易云音乐 App 扫描二维码完成用户授权，不要求 Mod 收集用户密码；
+- 接入前需要开放平台应用的 `appId` 与 `privateKey`；
+- `privateKey` 因此属于服务端机密，不得放入公开 Mod、客户端配置或 JAR；
+- 公开 README 与经过混淆的 CLI 发布产物不足以可靠确定 HTTP 端点、签名算法、Scope、令牌字段和轮换规则。
+
+当前仓库已经建立客户端认证状态机与 Windows DPAPI 会话存储。由于网易云官方对个人开发者不支持多用户 API，项目已决策改用第三方逆向库 `NeteaseCloudMusicApiEnhanced/api-enhanced` 作为数据来源：客户端直连自建的 `api-enhanced` 服务，会话改为 Cookie 模型，原 Spring Boot 后端与官方适配器已废弃删除。
+
+> **风险提示**：`NeteaseCloudMusicApiEnhanced/api-enhanced` 逆向网易云未公开私有接口，非官方授权。用于公开发布时存在账号封禁、服务条款与法律合规风险，且接口无稳定性承诺、可能随网易云调整而失效。此决策是团队在「个人开发者无法接入官方多用户 API」前提下的知情选择，不应描述为网易云官方认可的实现。
+
+## 18. 参考资料
 
 - [网易云音乐开放平台](https://developer.music.163.com/)
 - [网易云音乐 CLI npm 包](https://www.npmjs.com/package/%40music163/ncm-cli)
 - [网易云音乐官方 Agent Skills](https://github.com/NetEase/skills)
+- [NeteaseCloudMusicApiEnhanced/api-enhanced](https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced)
 - [Minecraft Fabric 音乐体验 Mod 开发文档](./minecraft-fabric-music-mod-development-document.md)

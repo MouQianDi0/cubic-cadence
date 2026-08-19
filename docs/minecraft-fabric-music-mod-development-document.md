@@ -133,7 +133,7 @@
 
 ### 4.4 明确不做
 
-- 不逆向未公开接口作为正式生产方案；
+- 官方个人开发者不支持多用户 API，项目改用第三方逆向库 `NeteaseCloudMusicApiEnhanced/api-enhanced`；该方案存在合规与随时失效风险，属知情决策，不作为官方认可的实现对外描述；
 - 不要求玩家把账号密码输入 Mod；
 - 不绕过会员、版权、地区或音质限制；
 - 不提供批量下载歌曲功能；
@@ -708,6 +708,8 @@ public enum MusicErrorCode {
 - 验证公开发布所需后端边界。
 
 验收：用户无需向 Mod 提供密码即可登录，并能在重启后恢复有效会话。
+
+2026-08-19 实施说明：客户端 `AuthManager`、Windows DPAPI 会话存储与登录状态 UI 已实现。网易云官方对个人开发者仅支持 `ncm-cli`，不支持多用户 API；项目据此决策改用第三方逆向库 `NeteaseCloudMusicApiEnhanced/api-enhanced` 作为数据来源：客户端直连自建服务，会话改为 Cookie 模型，原 Spring Boot 后端已废弃删除。此方案非官方授权，公开发布存在合规与接口随时失效风险。
 
 ### 阶段 4：歌单同步与音乐库
 
