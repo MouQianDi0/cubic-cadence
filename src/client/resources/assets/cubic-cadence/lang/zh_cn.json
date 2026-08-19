@@ -1,0 +1,18 @@
+{
+  "key.cubic-cadence.open_library": "打开音乐库",
+  "button.cubic-cadence.play": "播放",
+  "button.cubic-cadence.pause": "暂停",
+  "button.cubic-cadence.resume": "继续",
+  "button.cubic-cadence.loading": "加载中…",
+  "button.cubic-cadence.stop": "停止",
+  "slider.cubic-cadence.volume": "方律音量 %s%%",
+  "slider.cubic-cadence.vanilla_music_volume": "原版音乐音量 %s%%",
+  "checkbox.cubic-cadence.disable_vanilla_music": "禁用原版背景音乐",
+  "label.cubic-cadence.local_test_track": "本地测试音频",
+  "status.cubic-cadence.idle": "等待播放",
+  "status.cubic-cadence.loading": "正在读取并解码音频",
+  "status.cubic-cadence.playing": "正在播放（与原版声音并行）",
+  "status.cubic-cadence.paused": "已暂停",
+  "status.cubic-cadence.ended": "播放完成",
+  "status.cubic-cadence.error": "播放失败，请查看日志"
+}

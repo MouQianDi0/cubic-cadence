@@ -21,7 +21,7 @@ public class ModConfig {
     }
 
     public void setVolume(float volume) {
-        this.volume = volume;
+        this.volume = Math.max(0.0f, Math.min(1.0f, volume));
     }
 
     public boolean isHudEnabled() {
