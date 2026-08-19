@@ -2,7 +2,7 @@ package com.cubiccadence.client;
 
 import com.cubiccadence.client.config.ModConfig;
 import com.cubiccadence.client.playback.AudioEngine;
-import com.cubiccadence.client.playback.WaveAudioDecoder;
+import com.cubiccadence.client.playback.JavaSoundAudioDecoder;
 import com.cubiccadence.client.ui.screen.MusicLibraryScreen;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.api.ClientModInitializer;
@@ -19,8 +19,9 @@ public class CubicCadenceClient implements ClientModInitializer {
     public static final String MOD_ID = "cubic-cadence";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
     public static final Identifier LOCAL_TEST_AUDIO = id("audio/test-audio.wav");
+    public static final Identifier LOCAL_TEST_AUDIO_MP3 = id("audio/eee.mp3");
 
-    private static final AudioEngine AUDIO_ENGINE = new AudioEngine(new WaveAudioDecoder());
+    private static final AudioEngine AUDIO_ENGINE = new AudioEngine(new JavaSoundAudioDecoder());
 
     public static KeyMapping openLibraryKey;
 
