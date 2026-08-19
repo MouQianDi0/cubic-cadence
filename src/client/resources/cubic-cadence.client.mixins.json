@@ -4,6 +4,7 @@
   "package": "com.cubiccadence.client.mixin",
   "compatibilityLevel": "JAVA_25",
   "client": [
+    "ChannelAccessor",
     "CheckboxAccessor",
     "SoundBufferLibraryAccessor",
     "SoundEngineAccessor",

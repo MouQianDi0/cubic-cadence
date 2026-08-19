@@ -5,6 +5,7 @@
   "button.cubic-cadence.resume": "继续",
   "button.cubic-cadence.loading": "加载中…",
   "button.cubic-cadence.stop": "停止",
+  "slider.cubic-cadence.progress": "进度 %s / %s",
   "slider.cubic-cadence.volume": "方律音量 %s%%",
   "slider.cubic-cadence.vanilla_music_volume": "原版音乐音量 %s%%",
   "checkbox.cubic-cadence.disable_vanilla_music": "禁用原版背景音乐",

@@ -5,6 +5,7 @@
   "button.cubic-cadence.resume": "Resume",
   "button.cubic-cadence.loading": "Loading…",
   "button.cubic-cadence.stop": "Stop",
+  "slider.cubic-cadence.progress": "Progress %s / %s",
   "slider.cubic-cadence.volume": "Cubic Cadence Volume %s%%",
   "slider.cubic-cadence.vanilla_music_volume": "Vanilla Music Volume %s%%",
   "checkbox.cubic-cadence.disable_vanilla_music": "Disable Vanilla Background Music",

@@ -1,6 +1,7 @@
 package com.cubiccadence.client.playback;
 
 import com.cubiccadence.client.CubicCadenceClient;
+import com.cubiccadence.client.mixin.ChannelAccessor;
 import com.cubiccadence.client.mixin.SoundBufferLibraryAccessor;
 import com.cubiccadence.client.mixin.SoundEngineAccessor;
 import com.cubiccadence.client.mixin.SoundManagerAccessor;
@@ -14,6 +15,8 @@ import net.minecraft.client.sounds.SoundBufferLibrary;
 import net.minecraft.client.sounds.SoundEngine;
 import net.minecraft.client.sounds.SoundManager;
 import net.minecraft.resources.Identifier;
+import org.lwjgl.openal.AL10;
+import org.lwjgl.openal.AL11;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -164,7 +167,25 @@ public class AudioEngine implements AutoCloseable {
     }
 
     public void seek(long positionMs) {
-        // Seeking is intentionally deferred until the streaming decoder stage.
+        PlaybackState currentState = this.state;
+        if ((currentState != PlaybackState.PLAYING && currentState != PlaybackState.PAUSED)
+                || this.durationMs <= 0L) {
+            return;
+        }
+
+        ChannelAccess.ChannelHandle handle = currentHandle();
+        if (handle == null) {
+            return;
+        }
+
+        long clampedPositionMs = Math.max(0L, Math.min(positionMs, this.durationMs));
+        long effectivePositionMs = Math.min(clampedPositionMs, Math.max(0L, this.durationMs - 1L));
+        handle.execute(channel -> AL10.alSourcef(
+                ((ChannelAccessor) channel).cubicCadence$getSource(),
+                AL11.AL_SEC_OFFSET,
+                effectivePositionMs / 1000.0f
+        ));
+        resetClockTo(effectivePositionMs, currentState == PlaybackState.PAUSED);
     }
 
     public void setVolume(float volume) {
@@ -314,6 +335,13 @@ public class AudioEngine implements AutoCloseable {
     private void resetClock() {
         this.playbackStartedNanos = 0L;
         this.pausedAtNanos = 0L;
+        this.totalPausedNanos = 0L;
+    }
+
+    private void resetClockTo(long positionMs, boolean paused) {
+        long now = System.nanoTime();
+        this.playbackStartedNanos = now - positionMs * 1_000_000L;
+        this.pausedAtNanos = paused ? now : 0L;
         this.totalPausedNanos = 0L;
     }
 
