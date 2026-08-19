@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-08-19 23:43:18 - 修复问题（登录体验优化：等待反馈、速度与返回主页）
+
+- **变更概述**：优化网易云二维码登录体验。将扫码后轮询间隔从 2 秒降到 1 秒、缩短请求/连接超时；暴露「已扫码待确认」状态并在主页/二维码页显示；二维码垂直居中并加生成动画；移除不能独立完成登录的「在浏览器打开」按钮；授权成功或关闭二维码页时返回「音乐库」主页继续等待。
+- **修改文件**：
+  - `src/client/java/com/cubiccadence/client/provider/netease/NeteaseAuthClient.java`
+  - `src/client/java/com/cubiccadence/client/auth/AuthManager.java`
+  - `src/client/java/com/cubiccadence/client/ui/screen/LoginQrScreen.java`
+  - `src/client/java/com/cubiccadence/client/ui/screen/MusicLibraryScreen.java`
+  - `src/client/resources/assets/cubic-cadence/lang/zh_cn.json`、`en_us.json`
+  - `src/test/java/com/cubiccadence/client/auth/AuthManagerTest.java`
+- **变更内容**：
+  - `NeteaseAuthClient`：`POLL_INTERVAL_MS` 2s→1s（对齐 `AuthManager` 的 `MIN_POLL_INTERVAL_MS`），`REQUEST_TIMEOUT` 15s→10s，`connectTimeout` 10s→5s，扫码后更快感知结果、服务不可达时更快暴露错误；
+  - `AuthManager`：新增 `volatile lastStatus` 与 `getLastStatus()`，在 `beginLogin`/授权成功/拒绝/过期/错误时重置为 `PENDING`，轮询返回 `SCANNED` 时记录并保持 `AUTHORIZING`，供 UI 区分「等待扫码」与「已扫码待确认」；
+  - `LoginQrScreen`：移除「在浏览器打开」按钮（`authorizationUrl` 与二维码内容相同，无法独立登录）；二维码由固定 `QR_TOP=54` 改为垂直居中；二维码生成中按 tick 渲染省略号动画；新增 `SCANNED` 黄色提示；授权成功与手动关闭均通过 `returnToLibrary()` 返回 `MusicLibraryScreen`，并用 `navigated` 防重复跳转；
+  - `MusicLibraryScreen`：`AUTHORIZING` 时顶部显示等待原因（需手机 App 扫码确认），登录按钮由置灰改为「查看二维码」可重新打开二维码页，`SCANNED` 时同步显示「已扫码待确认」；仅 `REFRESHING` 状态保持按钮置灰；
+  - 语言文件：移除 `button.cubic-cadence.open_browser` 与 `button.cubic-cadence.authorizing`，新增 `button.cubic-cadence.view_qr`、`auth.cubic-cadence.authorizing_home`、`auth.cubic-cadence.scanned`；
+  - 测试：新增 `exposesScannedStatusWithoutCompletingAuthorization` 用例，验证 `SCANNED` 保持 `AUTHORIZING` 且 `getLastStatus()` 正确暴露。
+- **风险**：轮询降到 1 秒会轻微增加自建 `api-enhanced` 服务的轮询频率（二维码有效期 5 分钟，可接受）；超时下调可能使网络抖动时的单次慢请求更快判定失败，但会通过错误文案与「重新获取二维码」按钮可恢复。
+- **验证**：`compileJava/compileClientJava/compileTestJava/test` 全部通过；中英文语言 JSON 校验通过。
+
 ## 2026-08-19 22:43:46 - 重构（客户端直连 api-enhanced，废弃 Spring Boot 后端）
 
 - **变更概述**：按已确认的方案 A，废弃 Spring Boot 后端与官方适配器，Mod 直连自建的 `api-enhanced` 服务；鉴权模型从 accessToken/refreshToken 改为网易云 Cookie，二维码登录改为 api-enhanced 的 `/login/qr/key`、`/login/qr/create`、`/login/qr/check` 三步。

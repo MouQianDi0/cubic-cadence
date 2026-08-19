@@ -4,6 +4,7 @@ import com.cubiccadence.auth.AuthSession;
 import com.cubiccadence.auth.AuthState;
 import com.cubiccadence.auth.AuthorizationChallenge;
 import com.cubiccadence.auth.AuthorizationResult;
+import com.cubiccadence.auth.AuthorizationStatus;
 import com.cubiccadence.provider.MusicProvider;
 
 import java.net.URI;
@@ -34,6 +35,7 @@ public final class AuthManager implements AutoCloseable {
     private volatile AuthSession session;
     private volatile AuthorizationChallenge challenge;
     private volatile String lastError;
+    private volatile AuthorizationStatus lastStatus = AuthorizationStatus.PENDING;
     private volatile ScheduledFuture<?> pollingTask;
     private volatile ScheduledFuture<?> refreshTask;
     private volatile boolean closed;
@@ -69,6 +71,10 @@ public final class AuthManager implements AutoCloseable {
         return Optional.ofNullable(lastError);
     }
 
+    public AuthorizationStatus getLastStatus() {
+        return lastStatus;
+    }
+
     public CompletableFuture<Void> beginLogin() {
         ensureOpen();
         long currentOperation = operation.incrementAndGet();
@@ -77,6 +83,7 @@ public final class AuthManager implements AutoCloseable {
         session = null;
         challenge = null;
         lastError = null;
+        lastStatus = AuthorizationStatus.PENDING;
         state = AuthState.AUTHORIZING;
         return provider.beginLogin()
                 .thenAccept(created -> {
@@ -160,6 +167,7 @@ public final class AuthManager implements AutoCloseable {
         session = null;
         challenge = null;
         lastError = null;
+        lastStatus = AuthorizationStatus.PENDING;
         safeClearStore();
         state = AuthState.SIGNED_OUT;
         if (activeSession == null) {
@@ -231,13 +239,17 @@ public final class AuthManager implements AutoCloseable {
             throw new IllegalStateException("Gateway returned an invalid authorization result");
         }
         switch (result.status()) {
-            case PENDING, SCANNED -> state = AuthState.AUTHORIZING;
+            case PENDING, SCANNED -> {
+                state = AuthState.AUTHORIZING;
+                lastStatus = result.status();
+            }
             case AUTHORIZED -> {
                 validateSession(result.session());
                 tokenStore.save(result.session());
                 session = result.session();
                 challenge = null;
                 lastError = null;
+                lastStatus = AuthorizationStatus.PENDING;
                 state = AuthState.SIGNED_IN;
                 cancelPolling();
                 scheduleRefresh(result.session());
@@ -247,6 +259,7 @@ public final class AuthManager implements AutoCloseable {
                 challenge = null;
                 state = AuthState.SIGNED_OUT;
                 lastError = "Authorization was denied";
+                lastStatus = AuthorizationStatus.PENDING;
             }
             case EXPIRED -> expireAuthorization();
         }
@@ -276,12 +289,14 @@ public final class AuthManager implements AutoCloseable {
         session = null;
         state = AuthState.EXPIRED;
         lastError = "Authorization request expired";
+        lastStatus = AuthorizationStatus.PENDING;
     }
 
     private void fail(String message) {
         cancelPolling();
         state = AuthState.ERROR;
         lastError = message;
+        lastStatus = AuthorizationStatus.PENDING;
     }
 
     private void validateChallenge(AuthorizationChallenge created) {

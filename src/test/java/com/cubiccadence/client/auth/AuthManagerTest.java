@@ -92,6 +92,21 @@ class AuthManagerTest {
         }
     }
 
+    @Test
+    void exposesScannedStatusWithoutCompletingAuthorization() {
+        FakeProvider provider = new FakeProvider();
+        MemoryTokenStore store = new MemoryTokenStore();
+        provider.authorizationResult = new AuthorizationResult(AuthorizationStatus.SCANNED, null, null);
+
+        try (AuthManager manager = new AuthManager(provider, store, CLOCK)) {
+            manager.beginLogin().join();
+            manager.pollAuthorization().join();
+
+            assertEquals(AuthState.AUTHORIZING, manager.getState());
+            assertEquals(AuthorizationStatus.SCANNED, manager.getLastStatus());
+        }
+    }
+
     private static final class MemoryTokenStore implements SecureTokenStore {
         private AuthSession session;
 

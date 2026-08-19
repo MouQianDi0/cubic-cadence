@@ -7,6 +7,7 @@ import com.cubiccadence.client.mixin.CheckboxAccessor;
 import com.cubiccadence.client.playback.AudioEngine;
 import com.cubiccadence.model.PlaybackState;
 import com.cubiccadence.auth.AuthState;
+import com.cubiccadence.auth.AuthorizationStatus;
 import net.minecraft.client.OptionInstance;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractSliderButton;
@@ -212,7 +213,7 @@ public class MusicLibraryScreen extends Screen {
             updateAuthControls();
             return;
         }
-        if (authState == AuthState.AUTHORIZING || authState == AuthState.REFRESHING) {
+        if (authState == AuthState.REFRESHING) {
             return;
         }
         this.minecraft.setScreenAndShow(new LoginQrScreen());
@@ -225,7 +226,7 @@ public class MusicLibraryScreen extends Screen {
         }
         AuthState authState = this.authManager.getState();
         this.authButton.setMessage(authButtonMessage());
-        this.authButton.active = authState != AuthState.AUTHORIZING && authState != AuthState.REFRESHING;
+        this.authButton.active = authState != AuthState.REFRESHING;
         this.authManager.getLastError().ifPresentOrElse(
                 error -> this.authButton.setTooltip(Tooltip.create(Component.literal(error))),
                 () -> this.authButton.setTooltip(null)
@@ -235,22 +236,23 @@ public class MusicLibraryScreen extends Screen {
     private Component authButtonMessage() {
         return switch (this.authManager.getState()) {
             case SIGNED_IN -> Component.translatable("button.cubic-cadence.logout");
-            case AUTHORIZING -> Component.translatable("button.cubic-cadence.authorizing");
+            case AUTHORIZING -> Component.translatable("button.cubic-cadence.view_qr");
             case REFRESHING -> Component.translatable("button.cubic-cadence.refreshing");
             default -> Component.translatable("button.cubic-cadence.login");
         };
     }
 
     private Component authStatusMessage() {
-        String suffix = switch (this.authManager.getState()) {
-            case SIGNED_OUT -> "signed_out";
-            case AUTHORIZING -> "authorizing";
-            case SIGNED_IN -> "signed_in";
-            case REFRESHING -> "refreshing";
-            case EXPIRED -> "expired";
-            case ERROR -> "error";
+        return switch (this.authManager.getState()) {
+            case SIGNED_OUT -> Component.translatable("auth.cubic-cadence.signed_out");
+            case AUTHORIZING -> this.authManager.getLastStatus() == AuthorizationStatus.SCANNED
+                    ? Component.translatable("auth.cubic-cadence.scanned")
+                    : Component.translatable("auth.cubic-cadence.authorizing_home");
+            case SIGNED_IN -> Component.translatable("auth.cubic-cadence.signed_in");
+            case REFRESHING -> Component.translatable("auth.cubic-cadence.refreshing");
+            case EXPIRED -> Component.translatable("auth.cubic-cadence.expired");
+            case ERROR -> Component.translatable("auth.cubic-cadence.error");
         };
-        return Component.translatable("auth.cubic-cadence." + suffix);
     }
 
     private void handleVanillaMusicToggle(boolean disabled) {

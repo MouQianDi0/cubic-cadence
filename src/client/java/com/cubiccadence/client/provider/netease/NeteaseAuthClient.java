@@ -26,10 +26,10 @@ import java.util.concurrent.CompletableFuture;
  * carries that cookie instead of official access/refresh tokens.
  */
 public final class NeteaseAuthClient {
-    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(15);
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
     private static final long SESSION_TTL_MS = Duration.ofDays(7).toMillis();
     private static final long QRCODE_TTL_MS = Duration.ofMinutes(5).toMillis();
-    private static final long POLL_INTERVAL_MS = 2_000L;
+    private static final long POLL_INTERVAL_MS = 1_000L;
     private static final int MAX_RESPONSE_BYTES = 256 * 1024;
     private static final Gson GSON = new Gson();
 
@@ -38,7 +38,7 @@ public final class NeteaseAuthClient {
 
     public NeteaseAuthClient(URI baseUri) {
         this(baseUri, HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
+                .connectTimeout(Duration.ofSeconds(5))
                 .followRedirects(HttpClient.Redirect.NEVER)
                 .build());
     }

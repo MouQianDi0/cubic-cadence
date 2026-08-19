@@ -2,6 +2,7 @@ package com.cubiccadence.client.ui.screen;
 
 import com.cubiccadence.auth.AuthState;
 import com.cubiccadence.auth.AuthorizationChallenge;
+import com.cubiccadence.auth.AuthorizationStatus;
 import com.cubiccadence.client.CubicCadenceClient;
 import com.cubiccadence.client.auth.AuthManager;
 import com.google.zxing.BarcodeFormat;
@@ -13,24 +14,25 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
-import java.awt.Desktop;
-import java.net.URI;
 import java.util.Map;
 
 /**
  * Dedicated login screen that renders the NetEase authorization URL as a QR
- * code inside the game window, polls the gateway and closes once authorized.
+ * code inside the game window, polls the gateway and returns to the music
+ * library once authorized.
  */
 public class LoginQrScreen extends Screen {
     private static final int QR_SCALE = 4;
     private static final int QR_QUIET_ZONE = 8;
-    private static final int QR_TOP = 54;
+    private static final int TOP_RESERVE = 46;
+    private static final int BOTTOM_RESERVE = 40;
 
     private final AuthManager authManager;
     private volatile BitMatrix qrMatrix;
     private volatile String encodedContent;
-    private Button openBrowserButton;
     private Button regenerateButton;
+    private int loadingTicks;
+    private boolean navigated;
 
     public LoginQrScreen() {
         super(Component.translatable("screen.cubic-cadence.login_qr"));
@@ -40,20 +42,12 @@ public class LoginQrScreen extends Screen {
     @Override
     protected void init() {
         int centerX = this.width / 2;
-        this.openBrowserButton = this.addRenderableWidget(
-                Button.builder(
-                                Component.translatable("button.cubic-cadence.open_browser"),
-                                button -> openInBrowser()
-                        )
-                        .bounds(centerX - 108, this.height - 36, 104, Button.DEFAULT_HEIGHT)
-                        .build()
-        );
         this.regenerateButton = this.addRenderableWidget(
                 Button.builder(
                                 Component.translatable("button.cubic-cadence.regenerate_qr"),
                                 button -> regenerate()
                         )
-                        .bounds(centerX + 4, this.height - 36, 104, Button.DEFAULT_HEIGHT)
+                        .bounds(centerX - 52, this.height - 36, 104, Button.DEFAULT_HEIGHT)
                         .build()
         );
         ensureAuthorization();
@@ -66,18 +60,14 @@ public class LoginQrScreen extends Screen {
 
         BitMatrix matrix = this.qrMatrix;
         if (matrix == null) {
-            extractor.centeredText(
-                    this.font,
-                    Component.translatable("auth.cubic-cadence.qr_loading"),
-                    this.width / 2,
-                    90,
-                    0xFFBDBDBD
-            );
+            String dots = ".".repeat((this.loadingTicks / 20) % 4);
+            Component loading = Component.translatable("auth.cubic-cadence.qr_loading").copy().append(dots);
+            extractor.centeredText(this.font, loading, this.width / 2, verticalCenter(1), 0xFFBDBDBD);
         } else {
             int matrixSize = matrix.getWidth();
             int pixelSize = matrixSize * QR_SCALE;
             int left = (this.width - pixelSize) / 2;
-            int top = QR_TOP;
+            int top = verticalCenter(pixelSize);
             extractor.fill(
                     left - QR_QUIET_ZONE,
                     top - QR_QUIET_ZONE,
@@ -111,22 +101,38 @@ public class LoginQrScreen extends Screen {
 
     @Override
     public void tick() {
+        this.loadingTicks++;
         if (this.authManager.getState() == AuthState.SIGNED_IN) {
-            this.onClose();
+            returnToLibrary();
             return;
         }
         this.authManager.getChallenge().ifPresent(this::encodeIfNeeded);
         AuthState state = this.authManager.getState();
-        this.openBrowserButton.active = this.authManager.getChallenge()
-                .map(challenge -> challenge.authorizationUrl() != null
-                        && !challenge.authorizationUrl().isBlank())
-                .orElse(false);
         this.regenerateButton.active = state == AuthState.EXPIRED || state == AuthState.ERROR;
     }
 
     @Override
     public boolean isPauseScreen() {
         return false;
+    }
+
+    @Override
+    public void onClose() {
+        returnToLibrary();
+        super.onClose();
+    }
+
+    private int verticalCenter(int blockHeight) {
+        int available = Math.max(0, this.height - TOP_RESERVE - BOTTOM_RESERVE - blockHeight);
+        return TOP_RESERVE + available / 2;
+    }
+
+    private void returnToLibrary() {
+        if (this.navigated || this.minecraft == null) {
+            return;
+        }
+        this.navigated = true;
+        this.minecraft.setScreenAndShow(new MusicLibraryScreen());
     }
 
     private void ensureAuthorization() {
@@ -173,22 +179,11 @@ public class LoginQrScreen extends Screen {
         }
     }
 
-    private void openInBrowser() {
-        AuthorizationChallenge challenge = this.authManager.getChallenge().orElse(null);
-        if (challenge == null || challenge.authorizationUrl() == null
-                || challenge.authorizationUrl().isBlank()) {
-            return;
-        }
-        try {
-            if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
-                Desktop.getDesktop().browse(URI.create(challenge.authorizationUrl()));
-            }
-        } catch (Exception exception) {
-            CubicCadenceClient.LOGGER.warn("Could not open the NetEase authorization page in the browser");
-        }
-    }
-
     private Component statusMessage() {
+        if (this.authManager.getState() == AuthState.AUTHORIZING
+                && this.authManager.getLastStatus() == AuthorizationStatus.SCANNED) {
+            return Component.translatable("auth.cubic-cadence.scanned");
+        }
         return switch (this.authManager.getState()) {
             case SIGNED_OUT -> Component.translatable("auth.cubic-cadence.signed_out");
             case AUTHORIZING -> Component.translatable("auth.cubic-cadence.authorizing");
@@ -200,10 +195,15 @@ public class LoginQrScreen extends Screen {
     }
 
     private int statusColor() {
-        return switch (this.authManager.getState()) {
-            case SIGNED_IN -> 0xFF80FF80;
-            case EXPIRED, ERROR -> 0xFFFF6B6B;
-            default -> 0xFFBDBDBD;
-        };
+        if (this.authManager.getState() == AuthState.SIGNED_IN) {
+            return 0xFF80FF80;
+        }
+        if (this.authManager.getState() == AuthState.EXPIRED || this.authManager.getState() == AuthState.ERROR) {
+            return 0xFFFF6B6B;
+        }
+        if (this.authManager.getLastStatus() == AuthorizationStatus.SCANNED) {
+            return 0xFFFFD166;
+        }
+        return 0xFFBDBDBD;
     }
 }
