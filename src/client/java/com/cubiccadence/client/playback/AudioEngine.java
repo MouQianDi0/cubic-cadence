@@ -245,6 +245,9 @@ public class AudioEngine implements AutoCloseable {
         this.decodeExecutor.shutdownNow();
         this.cachedAudio = null;
         this.cachedResource = null;
+        if (this.soundBuffer != null) {
+            this.soundBuffer.discardAlBuffer();
+        }
         this.soundBuffer = null;
     }
 
@@ -281,9 +284,10 @@ public class AudioEngine implements AutoCloseable {
                 LOCAL_BUFFER_ID,
                 this.volume
         );
-        if (this.soundBuffer == null || !this.soundBuffer.isValid()) {
-            this.soundBuffer = new SoundBuffer(decoded.pcm().duplicate(), decoded.format());
+        if (this.soundBuffer != null) {
+            this.soundBuffer.discardAlBuffer();
         }
+        this.soundBuffer = new SoundBuffer(decoded.pcm().duplicate(), decoded.format());
         Map<Identifier, CompletableFuture<SoundBuffer>> cache =
                 ((SoundBufferLibraryAccessor) soundBuffers).cubicCadence$getCache();
         cache.put(instance.bufferPath(), CompletableFuture.completedFuture(this.soundBuffer));

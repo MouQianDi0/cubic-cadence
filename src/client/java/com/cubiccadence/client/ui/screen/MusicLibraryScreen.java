@@ -23,16 +23,24 @@ public class MusicLibraryScreen extends Screen {
     private static final int CONTROL_WIDTH = 220;
     private static final int BUTTON_GAP = 8;// 按钮之间的间距
     private static final int MEDIA_BUTTON_WIDTH = 40;// 播放/暂停按钮和停止按钮的宽度
-    private static final int MEDIA_CONTROLS_WIDTH = MEDIA_BUTTON_WIDTH * 2 + BUTTON_GAP;// 播放/暂停按钮和停止按钮的宽度
+    private static final int FORMAT_BUTTON_WIDTH = 72;
+    private static final int MEDIA_CONTROLS_WIDTH = MEDIA_BUTTON_WIDTH * 2 + FORMAT_BUTTON_WIDTH + BUTTON_GAP * 2;
     private static final double MIN_AUDIBLE_VOLUME = 0.0001;
     private static double lastNonZeroVanillaMusicVolume = 1.0;
+    private static final Identifier[] TEST_TRACKS = {
+            CubicCadenceClient.LOCAL_TEST_AUDIO,
+            CubicCadenceClient.LOCAL_TEST_AUDIO_MP3
+    };
+    private static final String[] TEST_TRACK_LABELS = {"WAV", "MP3"};
 
     private final AudioEngine audioEngine;
     private Button playPauseButton;
     private Button stopButton;
+    private Button formatButton;
     private Checkbox disableVanillaMusicCheckbox;
     private ProgressSlider progressSlider;
     private VanillaMusicVolumeSlider vanillaMusicVolumeSlider;
+    private int testTrackIndex;
 
     public MusicLibraryScreen() {
         super(Component.literal("Cubic Cadence"));
@@ -73,6 +81,17 @@ public class MusicLibraryScreen extends Screen {
                                 Button.DEFAULT_HEIGHT
                         )
                         .tooltip(Tooltip.create(Component.translatable("button.cubic-cadence.stop")))
+                        .build()
+        );
+        this.formatButton = this.addRenderableWidget(
+                Button.builder(Component.literal(TEST_TRACK_LABELS[this.testTrackIndex]), button -> cycleTestTrack())
+                        .bounds(
+                                mediaLeft + MEDIA_BUTTON_WIDTH * 2 + BUTTON_GAP * 2,
+                                controlsTop,
+                                FORMAT_BUTTON_WIDTH,
+                                Button.DEFAULT_HEIGHT
+                        )
+                        .tooltip(Tooltip.create(Component.literal("Local test audio format")))
                         .build()
         );
         this.disableVanillaMusicCheckbox = this.addRenderableWidget(
@@ -214,7 +233,16 @@ public class MusicLibraryScreen extends Screen {
             case BUFFERING, RESOLVING -> {
                 return;
             }
-            default -> this.audioEngine.playLocal(CubicCadenceClient.LOCAL_TEST_AUDIO);
+            default -> this.audioEngine.playLocal(TEST_TRACKS[this.testTrackIndex]);
+        }
+        updateControls();
+    }
+
+    private void cycleTestTrack() {
+        this.testTrackIndex = (this.testTrackIndex + 1) % TEST_TRACKS.length;
+        this.audioEngine.stop();
+        if (this.formatButton != null) {
+            this.formatButton.setMessage(Component.literal(TEST_TRACK_LABELS[this.testTrackIndex]));
         }
         updateControls();
     }

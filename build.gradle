@@ -29,6 +29,14 @@ dependencies {
 
 	// Fabric API. This is technically optional, but you probably want it anyway.
 	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+
+	// MP3 audio decoder (JavaSound SPI). These are bundled into the mod jar so
+	// local MP3 files decode to PCM without any native dependency.
+	implementation "com.tianscar.javasound:javasound-mp3:1.9.8"
+	// Runtime/transitive providers that must also be on the compile classpath.
+	implementation "com.googlecode.soundlibs:tritonus-share:0.3.7.4"
+	include "com.tianscar.javasound:javasound-mp3:1.9.8"
+	include "com.googlecode.soundlibs:tritonus-share:0.3.7.4"
 }
 
 processResources {

@@ -1,5 +1,53 @@
 # Changelog
 
+## 2026-08-19 17:12:37 - 优化代码（移除 M4A/AAC 音频支持）
+
+- **变更概述**：按需求移除用不到的 M4A（含 MP4/AAC）音频支持，仅保留 WAV 与 MP3 解码能力，精简依赖与测试资源。
+- **修改文件**：
+  - 修改 `build.gradle`
+  - 修改 `src/client/java/com/cubiccadence/client/playback/JavaSoundAudioDecoder.java`
+  - 修改 `src/client/java/com/cubiccadence/client/CubicCadenceClient.java`
+  - 修改 `src/client/java/com/cubiccadence/client/ui/screen/MusicLibraryScreen.java`
+  - 删除 `src/client/resources/assets/cubic-cadence/audio/test-audio.m4a`
+  - 修改 `docs/design.md`
+  - 修改 `CHANGELOG.md`
+- **变更内容**：
+  - 从 `build.gradle` 移除 `javasound-aac` 与 `javasound-resloader` 的 implementation 与 include，仅保留 `javasound-mp3` 与 `tritonus-share`；
+  - `JavaSoundAudioDecoder` 删除 AAC/MP4 解码分支、AAC 格式魔数识别、AAC 字段与字节序翻转逻辑，`supports()` 仅保留 wav/wave/mpeg/mp3；
+  - 移除 `CubicCadenceClient.LOCAL_TEST_AUDIO_M4A` 常量与 M4A 测试资源，音乐界面测试格式切换仅保留 WAV/MP3 两项；
+  - 同步更新 `docs/design.md` 的格式说明。
+
+## 2026-08-19 14:59:51 - 修复问题（切换音频格式后仍播放旧格式）
+
+- **变更概述**：修复切换 WAV/MP3/M4A 测试音轨后，实际播放内容仍为首次加载格式的问题；每次播放均用当前解码出的 PCM 重建 OpenAL 缓冲，并在替换或关闭时释放旧缓冲。
+- **修改文件**：
+  - 修改 `src/client/java/com/cubiccadence/client/playback/AudioEngine.java`
+  - 修改 `CHANGELOG.md`
+- **变更内容**：
+  - `AudioEngine.installAndPlay(...)` 原逻辑仅在 `soundBuffer` 为空或失效时创建缓冲，导致首次加载后永久复用同一个 OpenAL 缓冲，切换格式后播放内容不变；改为每次都用当前 `decoded` 重新创建 `SoundBuffer`；
+  - 替换旧缓冲前调用 `SoundBuffer.discardAlBuffer()` 释放其 OpenAL buffer，避免每次切换累积 OpenAL 缓冲泄漏；
+  - `AudioEngine.close()` 同步补充 `discardAlBuffer()`，关闭引擎时释放仍持有的 OpenAL 缓冲，消除退出时的既有泄漏隐患。
+
+## 2026-08-19 14:38:31 - 新增功能（MP3 与 AAC/MP4 音频解码支持）
+
+- **变更概述**：为本地音乐播放链路新增 MP3 与 AAC（含 MP4/M4A 容器）解码能力，使模组除 WAV 外也能播放 MP3 与 MP4/M4A 音频文件；本地测试入口增加 WAV/MP3/M4A 三种格式切换。
+- **修改文件**：
+  - 修改 `build.gradle`
+  - 新增 `src/client/java/com/cubiccadence/client/playback/JavaSoundAudioDecoder.java`
+  - 删除 `src/client/java/com/cubiccadence/client/playback/WaveAudioDecoder.java`
+  - 修改 `src/client/java/com/cubiccadence/client/CubicCadenceClient.java`
+  - 修改 `src/client/java/com/cubiccadence/client/ui/screen/MusicLibraryScreen.java`
+  - 新增 `src/client/resources/assets/cubic-cadence/audio/test-audio.mp3`
+  - 新增 `src/client/resources/assets/cubic-cadence/audio/test-audio.m4a`
+  - 修改 `docs/design.md`
+  - 修改 `CHANGELOG.md`
+- **变更内容**：
+  - 引入 `com.tianscar.javasound:javasound-mp3:1.9.8`（LGPL 2.0）与 `com.tianscar.javasound:javasound-aac:0.9.8`（Apache 2.0）及传递依赖 `tritonus-share`、`javasound-resloader`，通过 Loom `include` 以嵌套 jar 形式打进 mod 包；
+  - 新增 `JavaSoundAudioDecoder`，按文件魔数识别 WAV/MP3/MP4(AAC)，显式调用对应 JavaSound SPI provider 类完成解码，绕开 Fabric 嵌套 jar 下 `ServiceLoader` 无法稳定发现 SPI 的问题；
+  - MP3 经 `MpegFormatConversionProvider` 解码为 16-bit 小端 PCM；AAC/MP4 经 JAAD 解码为 16-bit 大端 PCM 后统一翻转为小端，最终均归一化为 `PCM_SIGNED` 立体声/单声道格式交给 OpenAL；
+  - 删除仅支持 WAV 的 `WaveAudioDecoder`，`AudioEngine` 改为使用通用解码器，原有 WAV 播放与进度/seek 逻辑不受影响；
+  - 本地测试音乐界面增加格式切换按钮，可在 WAV、MP3、M4A 之间循环切换并播放对应测试资源，便于直接在游戏内验收三种格式。
+
 ## 2026-08-19 13:56:51 - 优化代码（加长经验条与媒体图标按钮）
 
 - **变更概述**：加长经验条进度控件，将纯时间数值放到条体正下方居中，并把播放/暂停切换和停止按钮的可见文字替换为常见媒体图标。
