@@ -92,6 +92,7 @@ class NeteaseApiClientTest {
                       "name": "我创建的歌单",
                       "coverImgUrl": "https://p1.music.126.net/created.jpg",
                       "trackCount": 12,
+                      "specialType": 5,
                       "creator": {"userId": 123456789}
                     },
                     {
@@ -108,7 +109,7 @@ class NeteaseApiClientTest {
         assertEquals(2, page.items().size());
         assertTrue(page.hasNext());
         assertEquals(9, page.total());
-        assertEquals(PlaylistOwnership.CREATED, page.items().get(0).ownership());
+        assertEquals(PlaylistOwnership.SPECIAL, page.items().get(0).ownership());
         assertEquals(PlaylistOwnership.COLLECTED, page.items().get(1).ownership());
     }
 

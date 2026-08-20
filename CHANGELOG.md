@@ -1,5 +1,33 @@
 # Changelog
 
+## 2026-08-20 15:08:32 - 新增功能（第一阶段音乐库全量同步、缓存优先启动与远程图片稳定加载）
+
+- **变更概述**：实现第一阶段音乐库同步闭环：同步用户创建、收藏及网易云 `specialType=5` 的红心歌单，支持首次同步进度、手动刷新、缓存先显示再后台刷新和每页 8 项本地分页；同时修复合法网易云 PNG 已下载但在原图片解码链路持续失败、头像与封面只能显示占位的问题。
+- **修改文件**：
+  - `src/client/java/com/cubiccadence/client/library/LibrarySnapshot.java`（新增）
+  - `src/client/java/com/cubiccadence/client/library/LibraryCacheStore.java`（新增）
+  - `src/client/java/com/cubiccadence/client/library/MusicLibraryManager.java`
+  - `src/client/java/com/cubiccadence/client/provider/netease/NeteaseApiClient.java`
+  - `src/client/java/com/cubiccadence/client/ui/screen/MusicLibraryScreen.java`
+  - `src/client/java/com/cubiccadence/client/ui/texture/RemoteTextureCache.java`
+  - `src/client/resources/assets/cubic-cadence/lang/zh_cn.json`
+  - `src/client/resources/assets/cubic-cadence/lang/en_us.json`
+  - `src/test/java/com/cubiccadence/client/library/LibraryCacheStoreTest.java`（新增）
+  - `src/test/java/com/cubiccadence/client/library/MusicLibraryManagerTest.java`
+  - `src/test/java/com/cubiccadence/client/provider/netease/NeteaseApiClientTest.java`
+  - `src/test/java/com/cubiccadence/client/ui/texture/RemoteTextureCacheTest.java`
+  - `docs/design.md`
+  - `CHANGELOG.md`
+- **变更内容**：
+  - `MusicLibraryManager` 在恢复登录后异步读取资料库缓存并立即构建首页，同时后台重新获取账号资料，以 `limit=50` 连续请求全部歌单摘要；同步完成后替换缓存，网络失败且已有缓存时继续显示旧数据并给出刷新警告；
+  - 首页仍保持 4×2、每页 8 项，但上一页/下一页改为内存分页，不再逐页发起网络请求；新增手动刷新按钮、首次同步已获取数/总数、后台刷新、上次同步时间以及创建/收藏/红心分类文案；
+  - `LibraryCacheStore` 在专用后台单线程中原子读写 `config/cubic-cadence/cache/library.json`，设 2 MiB、10000 个歌单的安全上限；只保存公开资料和歌单摘要，不保存 Cookie、歌曲明细或完整播放地址；显式退出按队列顺序清除资料库缓存；
+  - `NeteaseApiClient` 优先将 `specialType=5` 映射为 `SPECIAL` 红心集合，其余按创建者 ID 区分创建与收藏，不绕过平台会员、版权、地区或音质限制；
+  - `RemoteTextureCache` 改用 `ImageIO -> BufferedImage -> NativeImage -> DynamicTexture` 图片链路，继续后台下载、渲染线程注册/释放；成功图片原子写入最多 512 项磁盘缓存，网络/服务端错误有限重试，解码等确定性失败不重复请求；退出清缓存时用代次与文件锁避免迟到下载重新写回。
+  - 测试覆盖全量分批同步、本地八项分页、缓存先显示、后台失败降级、退出删除缓存、资料缓存读写、红心歌单映射和远程图片 URL 安全规则；同步更新中英文文案与设计说明。
+- **风险**：`api-enhanced` 属第三方逆向服务，`/user/playlist` 的 `more`、`playlistCount`、`specialType` 字段可能变化；单账号缓存依赖显式退出清理，异常强制终止时会保留到下次后台校验；大量歌单会增加顺序分页请求，但已限制最多 200 页/10000 项；Java ImageIO、AWT 到 NativeImage 的颜色和真实 GPU 动态纹理仍需在 Windows 游戏实例中确认。
+- **验证结果**：`.\gradlew.bat compileJava compileClientJava compileTestJava test` 全部通过；`zh_cn.json`、`en_us.json` 均通过 PowerShell JSON 解析；`git diff --check` 无空白错误，仅有工作区既有 LF→CRLF 提示。JDK 25 测试仍输出 JNA native-access 与 LWJGL Unsafe 的未来兼容性警告，不影响通过。需人工确认首次/缓存启动提示、手动刷新、红心/创建/收藏标签、头像与封面实际渲染、翻页复用、刷新失败降级及退出后缓存目录清理。
+
 ## 2026-08-20 14:10:02 - 修复问题（主页设置分层、歌单大封面居中及账号远程资料修复）
 
 - **变更概述**：依据游戏内截图重新整理音乐库主页，将音量相关控件迁入独立设置页并在右下角增加齿轮入口；将每页 8 个歌单封面放大到最大 176×176 并连同分页整体居中；修复远程头像/封面首次失败后不再恢复的问题，并通过额外资料接口补全用户等级和会员状态。

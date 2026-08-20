@@ -709,9 +709,11 @@ public final class MusicSettingsScreen extends Screen {
 }
 ```
 
-当前 `MusicLibraryScreen` 在登录后展示账号头像、昵称、完整用户标识、等级和会员状态；中部为居中的 4 列 × 2 行用户歌单大封面网格，封面最大逻辑尺寸为 176×176，通过紧贴网格下方的「上一页 / 下一页」按每页 8 项向 `api-enhanced` 分页请求。主页右下角齿轮打开 `MusicSettingsScreen`，方律音量、原版音乐音量和禁用原版背景音乐均集中在设置页。
+当前 `MusicLibraryScreen` 在登录后展示账号头像、昵称、完整用户标识、等级和会员状态；中部为居中的 4 列 × 2 行用户歌单大封面网格，封面最大逻辑尺寸为 176×176，通过紧贴网格下方的「上一页 / 下一页」在已同步摘要中按每页 8 项本地分页。界面提供手动刷新、首次同步计数、后台刷新提示和上次同步时间，并以「我创建的歌单 / 我收藏的歌单 / 红心歌曲」标识来源。主页右下角齿轮打开 `MusicSettingsScreen`，方律音量、原版音乐音量和禁用原版背景音乐均集中在设置页。
 
-`NeteaseApiClient` 以 `/user/account` 的身份资料为基础，通过认证会话调用 `/user/level` 与 `/vip/info` 补充等级和会员；明确无权益时显示非会员，补充接口不可用时显示未知而不回退登录状态。`MusicLibraryManager` 负责异步资料/歌单状态与迟到响应隔离，`RemoteTextureCache` 在客户端后台下载网易云图片并只在渲染线程注册动态纹理；下载、HTTP、大小、解码和注册失败采用有限重试及脱敏阶段日志，图片最终失败仍只降级占位，不改变登录状态。
+`NeteaseApiClient` 以 `/user/account` 的身份资料为基础，通过认证会话调用 `/user/level` 与 `/vip/info` 补充等级和会员；明确无权益时显示非会员，补充接口不可用时显示未知而不回退登录状态。`MusicLibraryManager` 启动时先由 `LibraryCacheStore` 异步读取 `config/cubic-cadence/cache/library.json`，立即展示公开账号资料和全部歌单摘要，再在后台以每批最多 50 项请求 `/user/playlist` 直至完成；刷新失败保留可用缓存，显式退出删除资料库与封面缓存。缓存不含 Cookie、完整播放地址和歌曲明细，歌单歌曲仍留待点击歌单后按需加载。
+
+`RemoteTextureCache` 在客户端后台下载网易云图片，只在渲染线程注册/释放动态纹理；网络响应优先通过 Java `ImageIO` 解码为 `BufferedImage`，再转换为 Minecraft `NativeImage`，绕开当前环境中部分合法 PNG 直接解码失败的问题。成功响应写入有数量上限的磁盘缓存，后续页面与启动可复用；网络错误采用有限重试，格式、尺寸和解码等确定性错误不做无效重试，日志仅保留主机、阶段和异常类型，图片失败仍只降级占位而不改变登录状态。
 
 ## 10. 与网易云接口的映射
 

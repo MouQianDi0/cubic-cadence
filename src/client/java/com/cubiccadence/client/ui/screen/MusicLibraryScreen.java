@@ -8,6 +8,7 @@ import com.cubiccadence.client.playback.AudioEngine;
 import com.cubiccadence.client.ui.texture.RemoteTextureCache;
 import com.cubiccadence.model.MembershipTier;
 import com.cubiccadence.model.PlaybackState;
+import com.cubiccadence.model.PlaylistOwnership;
 import com.cubiccadence.model.PlaylistSummary;
 import com.cubiccadence.model.UserProfile;
 import com.cubiccadence.auth.AuthState;
@@ -25,6 +26,9 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -44,6 +48,8 @@ public class MusicLibraryScreen extends Screen {
     private static final int MAX_COVER_SIZE = 176;
     private static final int PAGE_GAP = 8;
     private static final int LIBRARY_SIDE_MARGIN = 20;
+    private static final DateTimeFormatter SYNC_TIME_FORMAT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault());
     private static final Identifier[] TEST_TRACKS = {
             CubicCadenceClient.LOCAL_TEST_AUDIO,
             CubicCadenceClient.LOCAL_TEST_AUDIO_MP3
@@ -58,6 +64,7 @@ public class MusicLibraryScreen extends Screen {
     private Button previousPageButton;
     private Button nextPageButton;
     private Button retryButton;
+    private Button refreshButton;
     private Button playPauseButton;
     private Button stopButton;
     private Button formatButton;
@@ -83,6 +90,15 @@ public class MusicLibraryScreen extends Screen {
         this.authButton = this.addRenderableWidget(
                 Button.builder(authButtonMessage(), button -> handleAuthAction())
                         .bounds(Math.max(10, this.width - 80), 18, 70, Button.DEFAULT_HEIGHT)
+                        .build()
+        );
+        this.refreshButton = this.addRenderableWidget(
+                Button.builder(Component.translatable("button.cubic-cadence.refresh_library"), button -> {
+                            this.libraryManager.refresh();
+                            updateLibraryControls();
+                        })
+                        .bounds(Math.max(82, this.width - 76), ACCOUNT_TOP + ACCOUNT_HEIGHT + 3, 66, Button.DEFAULT_HEIGHT)
+                        .tooltip(Tooltip.create(Component.translatable("tooltip.cubic-cadence.refresh_library")))
                         .build()
         );
         this.previousPageButton = this.addRenderableWidget(
@@ -236,6 +252,7 @@ public class MusicLibraryScreen extends Screen {
                 ACCOUNT_TOP + ACCOUNT_HEIGHT + 5,
                 0xFFFFFFFF
         );
+        renderLibrarySyncStatus(extractor);
 
         UserProfile profile = this.libraryManager.getProfile().orElse(null);
         if (profile == null) {
@@ -323,7 +340,70 @@ public class MusicLibraryScreen extends Screen {
                     y + layout.coverSize() + 3,
                     0xFFFFFFFF
             );
+            extractor.centeredText(
+                    this.font,
+                    ownershipMessage(playlist.ownership()),
+                    x + layout.coverSize() / 2,
+                    y + layout.coverSize() + 4 + this.font.lineHeight,
+                    0xFFBDBDBD
+            );
         }
+    }
+
+    private void renderLibrarySyncStatus(GuiGraphicsExtractor extractor) {
+        Component message = syncStatusMessage();
+        if (message.getString().isEmpty()) {
+            return;
+        }
+        int availableWidth = Math.max(40, this.refreshButton.getX() - 126);
+        extractor.text(
+                this.font,
+                fit(message, availableWidth),
+                118,
+                ACCOUNT_TOP + ACCOUNT_HEIGHT + 9,
+                this.libraryManager.hasRefreshWarning() ? 0xFFFFC857 : 0xFFBDBDBD
+        );
+    }
+
+    private Component syncStatusMessage() {
+        return switch (this.libraryManager.getLoadState()) {
+            case LOADING_CACHE -> Component.translatable("library.cubic-cadence.loading_cache");
+            case LOADING_PROFILE -> Component.translatable("library.cubic-cadence.loading_profile");
+            case SYNCING_PLAYLISTS -> this.libraryManager.getSyncTotal()
+                    .map(total -> Component.translatable(
+                            "library.cubic-cadence.sync_progress_total",
+                            this.libraryManager.getSyncLoadedCount(),
+                            total
+                    ))
+                    .orElseGet(() -> Component.translatable(
+                            "library.cubic-cadence.sync_progress",
+                            this.libraryManager.getSyncLoadedCount()
+                    ));
+            case REFRESHING -> Component.translatable("library.cubic-cadence.background_refresh");
+            case READY -> this.libraryManager.hasRefreshWarning()
+                    ? Component.translatable("library.cubic-cadence.refresh_failed_cached")
+                    : lastSyncMessage();
+            default -> Component.empty();
+        };
+    }
+
+    private Component lastSyncMessage() {
+        long syncedAt = this.libraryManager.getSyncedAtEpochMillis();
+        return syncedAt <= 0L
+                ? Component.empty()
+                : Component.translatable(
+                        "library.cubic-cadence.last_sync",
+                        SYNC_TIME_FORMAT.format(Instant.ofEpochMilli(syncedAt))
+                );
+    }
+
+    private Component ownershipMessage(PlaylistOwnership ownership) {
+        String suffix = switch (ownership) {
+            case CREATED -> "created";
+            case COLLECTED -> "collected";
+            case SPECIAL -> "favorite";
+        };
+        return Component.translatable("playlist.cubic-cadence.ownership." + suffix);
     }
 
     private void renderRemoteImage(GuiGraphicsExtractor extractor, String url, int x, int y, int size) {
@@ -360,7 +440,7 @@ public class MusicLibraryScreen extends Screen {
                 (Math.max(80, this.width - LIBRARY_SIDE_MARGIN * 2) - GRID_GAP * (GRID_COLUMNS - 1))
                         / GRID_COLUMNS
         );
-        int rowLabelHeight = this.font.lineHeight + 4;
+        int rowLabelHeight = this.font.lineHeight * 2 + 6;
         int fixedHeight = ROW_GAP + rowLabelHeight * GRID_ROWS + PAGE_GAP + Button.DEFAULT_HEIGHT;
         int coverFromHeight = Math.max(
                 12,
@@ -474,8 +554,9 @@ public class MusicLibraryScreen extends Screen {
                 confirmed -> {
                     if (confirmed) {
                         this.audioEngine.stop();
-                        this.libraryManager.clear();
+                        this.libraryManager.clearPrivateData();
                         this.textureCache.clear();
+                        this.textureCache.clearDiskCache();
                         this.authManager.logout();
                     }
                     this.minecraft.setScreenAndShow(this);
@@ -502,7 +583,8 @@ public class MusicLibraryScreen extends Screen {
     }
 
     private void updateLibraryControls() {
-        if (this.previousPageButton == null || this.nextPageButton == null || this.retryButton == null) {
+        if (this.previousPageButton == null || this.nextPageButton == null || this.retryButton == null
+                || this.refreshButton == null) {
             return;
         }
         boolean signedInWithProfile = this.authManager.getState() == AuthState.SIGNED_IN
@@ -515,6 +597,8 @@ public class MusicLibraryScreen extends Screen {
         this.nextPageButton.active = this.libraryManager.hasNextPage();
         this.retryButton.visible = failed;
         this.retryButton.active = failed;
+        this.refreshButton.visible = this.authManager.getState() == AuthState.SIGNED_IN;
+        this.refreshButton.active = this.refreshButton.visible && !this.libraryManager.isRefreshing();
     }
 
     private void syncRemoteTextureRetention() {

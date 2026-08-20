@@ -155,13 +155,16 @@ public final class NeteaseApiClient {
             }
             JsonObject playlist = element.getAsJsonObject();
             String creatorId = optionalNestedString(playlist, "creator", "userId");
+            PlaylistOwnership ownership = optionalInt(playlist, "specialType", 0) == 5
+                    ? PlaylistOwnership.SPECIAL
+                    : userId.equals(creatorId) ? PlaylistOwnership.CREATED : PlaylistOwnership.COLLECTED;
             items.add(new PlaylistSummary(
                     NeteaseMusicProvider.PROVIDER_ID,
                     requiredString(playlist, "id"),
                     requiredString(playlist, "name"),
                     optionalString(playlist, "coverImgUrl"),
                     Math.max(0, optionalInt(playlist, "trackCount", 0)),
-                    userId.equals(creatorId) ? PlaylistOwnership.CREATED : PlaylistOwnership.COLLECTED
+                    ownership
             ));
         }
         boolean hasNext = optionalBoolean(body, "more", items.size() >= requestedPageSize);
