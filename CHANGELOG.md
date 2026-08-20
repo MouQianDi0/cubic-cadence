@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-08-20 17:59:31 - 修复问题（播放失败缺少可追踪日志）
+
+- **变更概述**：播放失败时 UI 提示“请查看日志”，但失败路径没有写任何日志，导致无法定位具体原因。为解析播放地址、登录态和权限限制等失败分支补齐结构化日志。
+- **修改文件**：
+  - `src/client/java/com/cubiccadence/client/playback/PlayerController.java`
+  - `src/client/java/com/cubiccadence/client/provider/netease/NeteaseApiClient.java`
+  - `CHANGELOG.md`
+- **变更内容**：
+  - `PlayerController.fail()` 统一记录最终失败定位键、当前曲目 id 与标题；
+  - `PlayerController.playSelected()` 在“未登录/会话不可用”和“解析播放地址失败”两个分支分别记录曲目、音质及底层异常；
+  - `NeteaseApiClient.resolvePlaybackSource()` 在 api-enhanced 返回异常时记录 trackId、quality 与异常栈，且不改变原异步结果传播；
+  - 未修改任何播放、权限、解析或队列控制逻辑，仅新增诊断输出。
+- **风险**：仅新增日志、无控制流变更，理论上零功能回归；失败时会产生额外 warn 日志（属预期诊断输出）。
+- **验证结果**：`.\gradlew.bat compileJava compileClientJava compileTestJava test --no-daemon` 全部通过，47 项测试零失败；`zh_cn.json`、`en_us.json` 键集合与既有逻辑不变。真实“播放失败”场景仍需在 Windows 游戏实例内复现，确认日志能定位到具体错误键与底层异常。
+
 ## 2026-08-20 17:45:42 - 修复问题（本机与 GitHub 跨平台选择 Gradle JDK 25）
 
 - **变更概述**：修正仅删除本机 JDK 路径会导致 `JAVA_HOME` 为 JDK 17 的本机终端无法构建的问题，改用 Gradle 9.7 Daemon JVM Criteria 跨平台声明 Java 25 要求。

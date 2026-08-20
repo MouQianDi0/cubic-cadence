@@ -18,6 +18,8 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.net.URI;
 import java.net.URLEncoder;
@@ -36,6 +38,8 @@ import java.util.concurrent.CompletableFuture;
 
 /** Maps authenticated api-enhanced responses into provider-neutral records. */
 public final class NeteaseApiClient {
+    private static final Logger LOGGER = LoggerFactory.getLogger("cubic-cadence");
+
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
     private static final int MAX_RESPONSE_BYTES = 1024 * 1024;
     private static final int MAX_PAGE_SIZE = 50;
@@ -148,7 +152,17 @@ public final class NeteaseApiClient {
         query.put("level", requestLevel(quality));
         query.put("cookie", session.cookie());
         return getJson("/song/url/v1", query)
-                .thenApply(body -> parsePlaybackSource(body, quality));
+                .thenApply(body -> parsePlaybackSource(body, quality))
+                .whenComplete((source, throwable) -> {
+                    if (throwable != null) {
+                        LOGGER.warn(
+                                "Cubic Cadence api-enhanced playback source lookup failed: trackId={}, quality={}",
+                                trackId,
+                                quality,
+                                throwable
+                        );
+                    }
+                });
     }
 
     static UserProfile parseUserProfile(JsonObject body) {

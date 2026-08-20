@@ -9,6 +9,8 @@ import com.cubiccadence.model.PlaybackState;
 import com.cubiccadence.model.Track;
 import com.cubiccadence.provider.MusicProvider;
 import com.cubiccadence.provider.AudioQuality;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Objects;
@@ -18,6 +20,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
 public final class PlayerController {
+    private static final Logger LOGGER = LoggerFactory.getLogger("cubic-cadence");
+
     private final MusicProvider provider;
     private final Supplier<Optional<AuthSession>> sessionSupplier;
     private final PlaybackEngine audioEngine;
@@ -227,6 +231,11 @@ public final class PlayerController {
         }
         AuthSession session = sessionSupplier.get().orElse(null);
         if (session == null) {
+            LOGGER.warn(
+                    "Cubic Cadence playback rejected: no login session (trackId={}, title={})",
+                    track.trackId(),
+                    track.title()
+            );
             fail("playback_error.cubic-cadence.session_required");
             return;
         }
@@ -248,6 +257,13 @@ public final class PlayerController {
                         return;
                     }
                     if (throwable != null || source == null) {
+                        LOGGER.warn(
+                                "Cubic Cadence could not resolve playback source: trackId={}, title={}, quality={}",
+                                track.trackId(),
+                                track.title(),
+                                quality,
+                                throwable
+                        );
                         skipOrFail(skipped, "playback_error.cubic-cadence.resolve_failed");
                         return;
                     }
@@ -282,5 +298,12 @@ public final class PlayerController {
         audioEngine.stop();
         lastError = message;
         state = PlaybackState.ERROR;
+        Track track = currentTrack;
+        LOGGER.warn(
+                "Cubic Cadence playback failed: {} (trackId={}, title={})",
+                message,
+                track == null ? "<none>" : track.trackId(),
+                track == null ? "<none>" : track.title()
+        );
     }
 }
