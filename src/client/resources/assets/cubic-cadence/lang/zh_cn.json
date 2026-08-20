@@ -33,6 +33,7 @@
   "auth.cubic-cadence.qr_loading": "正在生成登录二维码…",
   "screen.cubic-cadence.login_qr": "登录网易云",
   "screen.cubic-cadence.settings": "方律设置",
+  "screen.cubic-cadence.playlist_detail": "歌单详情",
   "slider.cubic-cadence.progress": "进度 %s / %s",
   "slider.cubic-cadence.volume": "方律音量 %s%%",
   "slider.cubic-cadence.vanilla_music_volume": "原版音乐音量 %s%%",
@@ -63,10 +64,51 @@
   "playlist.cubic-cadence.ownership.created": "我创建的歌单",
   "playlist.cubic-cadence.ownership.collected": "我收藏的歌单",
   "playlist.cubic-cadence.ownership.favorite": "红心歌曲",
+  "playlist.cubic-cadence.track_count": "%s 首歌曲",
+  "playlist.cubic-cadence.detail_read_only": "点击可用歌曲开始播放",
+  "playlist.cubic-cadence.loading_tracks": "正在按需加载歌曲…",
+  "playlist.cubic-cadence.tracks_failed": "歌曲列表加载失败，请重试",
+  "playlist.cubic-cadence.empty_tracks": "该歌单暂无可展示的歌曲",
+  "playlist.cubic-cadence.session_unavailable": "登录状态不可用，请返回音乐库",
+  "playlist.cubic-cadence.track_secondary": "%s · %s",
+  "availability.cubic-cadence.playable": "可播放",
+  "availability.cubic-cadence.unavailable": "不可播放",
+  "availability.cubic-cadence.copyright_restricted": "版权受限",
+  "availability.cubic-cadence.membership_required": "会员不足",
+  "availability.cubic-cadence.region_restricted": "地区受限",
+  "availability.cubic-cadence.quality_unavailable": "音质不可用",
+  "availability.cubic-cadence.unknown": "状态未知",
+  "narration.cubic-cadence.track": "%s，歌手 %s，专辑 %s，时长 %s，%s",
   "status.cubic-cadence.idle": "等待播放",
   "status.cubic-cadence.loading": "正在读取并解码音频",
   "status.cubic-cadence.playing": "正在播放（与原版声音并行）",
   "status.cubic-cadence.paused": "已暂停",
   "status.cubic-cadence.ended": "播放完成",
-  "status.cubic-cadence.error": "播放失败，请查看日志"
+  "status.cubic-cadence.error": "播放失败，请查看日志",
+  "button.cubic-cadence.previous_track": "上一首",
+  "button.cubic-cadence.next_track": "下一首",
+  "playback_mode.cubic-cadence.sequential": "顺序播放",
+  "playback_mode.cubic-cadence.repeat_one": "单曲循环",
+  "playback_mode.cubic-cadence.repeat_all": "列表循环",
+  "playback_mode.cubic-cadence.shuffle": "随机播放",
+  "playback.cubic-cadence.now_playing": "%s · %s · %s",
+  "playback.cubic-cadence.trial": "试听片段",
+  "playback_state.cubic-cadence.idle": "等待播放",
+  "playback_state.cubic-cadence.resolving": "解析播放地址",
+  "playback_state.cubic-cadence.buffering": "正在缓冲",
+  "playback_state.cubic-cadence.playing": "正在播放",
+  "playback_state.cubic-cadence.paused": "已暂停",
+  "playback_state.cubic-cadence.ended": "播放结束",
+  "playback_state.cubic-cadence.error": "播放失败"
+  ,"setting.cubic-cadence.audio_quality": "在线播放音质：%s"
+  ,"audio_quality.cubic-cadence.low": "标准"
+  ,"audio_quality.cubic-cadence.standard": "较高"
+  ,"audio_quality.cubic-cadence.high": "极高"
+  ,"audio_quality.cubic-cadence.lossless": "无损（当前解码器不支持）"
+  ,"playback_error.cubic-cadence.empty_queue": "播放队列为空"
+  ,"playback_error.cubic-cadence.restricted": "歌曲受版权、会员或地区限制"
+  ,"playback_error.cubic-cadence.session_required": "登录状态不可用，请重新登录"
+  ,"playback_error.cubic-cadence.lossless_unsupported": "当前版本暂不支持无损流式解码"
+  ,"playback_error.cubic-cadence.resolve_failed": "无法获取当前账号可用的播放地址"
+  ,"playback_error.cubic-cadence.stream_failed": "在线音频连接或解码失败"
 }

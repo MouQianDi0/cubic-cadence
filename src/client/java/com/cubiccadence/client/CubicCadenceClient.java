@@ -4,8 +4,10 @@ import com.cubiccadence.client.auth.AuthManager;
 import com.cubiccadence.client.auth.WindowsDpapiTokenStore;
 import com.cubiccadence.client.config.ModConfig;
 import com.cubiccadence.client.library.MusicLibraryManager;
+import com.cubiccadence.client.library.PlaylistDetailManager;
 import com.cubiccadence.client.playback.AudioEngine;
 import com.cubiccadence.client.playback.JavaSoundAudioDecoder;
+import com.cubiccadence.client.playback.PlayerController;
 import com.cubiccadence.client.ui.screen.MusicLibraryScreen;
 import com.cubiccadence.client.ui.texture.RemoteTextureCache;
 import com.cubiccadence.client.provider.UnavailableMusicProvider;
@@ -36,6 +38,8 @@ public class CubicCadenceClient implements ClientModInitializer {
     private static final RemoteTextureCache REMOTE_TEXTURE_CACHE = new RemoteTextureCache();
     private static AuthManager authManager;
     private static MusicLibraryManager libraryManager;
+    private static PlaylistDetailManager playlistDetailManager;
+    private static PlayerController playerController;
 
     public static KeyMapping openLibraryKey;
 
@@ -46,6 +50,13 @@ public class CubicCadenceClient implements ClientModInitializer {
         MusicProvider musicProvider = createMusicProvider();
         authManager = createAuthManager(musicProvider);
         libraryManager = new MusicLibraryManager(musicProvider, authManager);
+        playlistDetailManager = new PlaylistDetailManager(musicProvider, authManager);
+        playerController = new PlayerController(
+                musicProvider,
+                authManager::getSession,
+                AUDIO_ENGINE,
+                Minecraft.getInstance()::execute
+        );
         authManager.restoreSession().exceptionally(throwable -> {
             LOGGER.warn("Cubic Cadence could not restore the saved login session");
             return null;
@@ -55,6 +66,8 @@ public class CubicCadenceClient implements ClientModInitializer {
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
             ModConfig.getInstance().save();
             libraryManager.close();
+            playlistDetailManager.close();
+            playerController.stop();
             authManager.close();
             REMOTE_TEXTURE_CACHE.close();
             AUDIO_ENGINE.close();
@@ -84,8 +97,22 @@ public class CubicCadenceClient implements ClientModInitializer {
         return libraryManager;
     }
 
+    public static PlaylistDetailManager getPlaylistDetailManager() {
+        if (playlistDetailManager == null) {
+            throw new IllegalStateException("Cubic Cadence playlist details are not initialized");
+        }
+        return playlistDetailManager;
+    }
+
     public static RemoteTextureCache getRemoteTextureCache() {
         return REMOTE_TEXTURE_CACHE;
+    }
+
+    public static PlayerController getPlayerController() {
+        if (playerController == null) {
+            throw new IllegalStateException("Cubic Cadence player is not initialized");
+        }
+        return playerController;
     }
 
     private static MusicProvider createMusicProvider() {
@@ -122,7 +149,9 @@ public class CubicCadenceClient implements ClientModInitializer {
     private void registerClientTick() {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             AUDIO_ENGINE.tick();
+            playerController.tick();
             libraryManager.tick();
+            playlistDetailManager.tick();
             while (openLibraryKey.consumeClick()) {
                 openMusicLibrary(client);
             }

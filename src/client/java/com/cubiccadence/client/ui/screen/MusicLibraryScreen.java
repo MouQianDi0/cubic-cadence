@@ -5,6 +5,7 @@ import com.cubiccadence.client.auth.AuthManager;
 import com.cubiccadence.client.config.ModConfig;
 import com.cubiccadence.client.library.MusicLibraryManager;
 import com.cubiccadence.client.playback.AudioEngine;
+import com.cubiccadence.client.playback.PlayerController;
 import com.cubiccadence.client.ui.texture.RemoteTextureCache;
 import com.cubiccadence.model.MembershipTier;
 import com.cubiccadence.model.PlaybackState;
@@ -57,6 +58,7 @@ public class MusicLibraryScreen extends Screen {
     private static final String[] TEST_TRACK_LABELS = {"WAV", "MP3"};
 
     private final AudioEngine audioEngine;
+    private final PlayerController playerController;
     private final AuthManager authManager;
     private final MusicLibraryManager libraryManager;
     private final RemoteTextureCache textureCache;
@@ -75,6 +77,7 @@ public class MusicLibraryScreen extends Screen {
     public MusicLibraryScreen() {
         super(Component.literal("Cubic Cadence"));
         this.audioEngine = CubicCadenceClient.getAudioEngine();
+        this.playerController = CubicCadenceClient.getPlayerController();
         this.authManager = CubicCadenceClient.getAuthManager();
         this.libraryManager = CubicCadenceClient.getLibraryManager();
         this.textureCache = CubicCadenceClient.getRemoteTextureCache();
@@ -138,7 +141,7 @@ public class MusicLibraryScreen extends Screen {
                         .build()
         );
         this.stopButton = this.addRenderableWidget(
-                Button.builder(Component.literal("■"), button -> this.audioEngine.stop())
+                Button.builder(Component.literal("■"), button -> stopPlayback())
                         .bounds(
                                 mediaLeft + MEDIA_BUTTON_WIDTH + BUTTON_GAP,
                                 controlsTop + 20,
@@ -176,7 +179,7 @@ public class MusicLibraryScreen extends Screen {
     public void extractRenderState(GuiGraphicsExtractor extractor, int mouseX, int mouseY, float tickDelta) {
         super.extractRenderState(extractor, mouseX, mouseY, tickDelta);
         renderAccountBar(extractor);
-        renderLibrary(extractor);
+        renderLibrary(extractor, mouseX, mouseY);
         extractor.centeredText(
                 this.font,
                 stateMessage(),
@@ -243,7 +246,7 @@ public class MusicLibraryScreen extends Screen {
         extractor.text(this.font, fit(secondary, availableWidth), textX, ACCOUNT_TOP + 23, 0xFFBDBDBD);
     }
 
-    private void renderLibrary(GuiGraphicsExtractor extractor) {
+    private void renderLibrary(GuiGraphicsExtractor extractor, int mouseX, int mouseY) {
         LibraryLayout layout = libraryLayout();
         extractor.text(
                 this.font,
@@ -286,7 +289,7 @@ public class MusicLibraryScreen extends Screen {
                     0xFFBDBDBD
             );
         } else {
-            renderPlaylistCards(extractor, page.items(), layout);
+            renderPlaylistCards(extractor, page.items(), layout, mouseX, mouseY);
         }
         if (this.libraryManager.getLoadState() != MusicLibraryManager.LoadState.ERROR) {
             extractor.centeredText(
@@ -323,7 +326,9 @@ public class MusicLibraryScreen extends Screen {
     private void renderPlaylistCards(
             GuiGraphicsExtractor extractor,
             List<PlaylistSummary> playlists,
-            LibraryLayout layout
+            LibraryLayout layout,
+            int mouseX,
+            int mouseY
     ) {
         int count = Math.min(playlists.size(), GRID_COLUMNS * GRID_ROWS);
         for (int index = 0; index < count; index++) {
@@ -332,6 +337,9 @@ public class MusicLibraryScreen extends Screen {
             int row = index / GRID_COLUMNS;
             int x = layout.left() + column * (layout.coverSize() + GRID_GAP);
             int y = layout.gridTop() + row * layout.rowHeight();
+            if (isInsidePlaylistCard(mouseX, mouseY, x, y, layout)) {
+                extractor.fill(x - 2, y - 2, x + layout.coverSize() + 2, y + layout.coverSize() + 2, 0xFF80FF20);
+            }
             renderRemoteImage(extractor, playlist.coverUrl(), x, y, layout.coverSize());
             extractor.centeredText(
                     this.font,
@@ -514,6 +522,45 @@ public class MusicLibraryScreen extends Screen {
     }
 
     @Override
+    public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        if (super.mouseClicked(event, doubleClick)) {
+            return true;
+        }
+        if (event.button() != 0) {
+            return false;
+        }
+        PlaylistSummary playlist = playlistAt(event.x(), event.y());
+        if (playlist == null || this.minecraft == null) {
+            return false;
+        }
+        this.minecraft.setScreenAndShow(new PlaylistDetailScreen(this, playlist));
+        return true;
+    }
+
+    private PlaylistSummary playlistAt(double mouseX, double mouseY) {
+        PlaylistSummaryPage page = this.libraryManager.getPlaylistPage().orElse(null);
+        if (page == null) {
+            return null;
+        }
+        LibraryLayout layout = libraryLayout();
+        int count = Math.min(page.items().size(), GRID_COLUMNS * GRID_ROWS);
+        for (int index = 0; index < count; index++) {
+            int x = layout.left() + (index % GRID_COLUMNS) * (layout.coverSize() + GRID_GAP);
+            int y = layout.gridTop() + (index / GRID_COLUMNS) * layout.rowHeight();
+            if (isInsidePlaylistCard(mouseX, mouseY, x, y, layout)) {
+                return page.items().get(index);
+            }
+        }
+        return null;
+    }
+
+    private boolean isInsidePlaylistCard(double mouseX, double mouseY, int x, int y, LibraryLayout layout) {
+        int cardHeight = layout.coverSize() + this.font.lineHeight * 2 + 6;
+        return mouseX >= x && mouseX < x + layout.coverSize()
+                && mouseY >= y && mouseY < y + cardHeight;
+    }
+
+    @Override
     public boolean keyPressed(KeyEvent event) {
         if (CubicCadenceClient.openLibraryKey.matches(event)) {
             this.onClose();
@@ -555,6 +602,7 @@ public class MusicLibraryScreen extends Screen {
                     if (confirmed) {
                         this.audioEngine.stop();
                         this.libraryManager.clearPrivateData();
+                        CubicCadenceClient.getPlaylistDetailManager().clear();
                         this.textureCache.clear();
                         this.textureCache.clearDiskCache();
                         this.authManager.logout();
@@ -633,6 +681,17 @@ public class MusicLibraryScreen extends Screen {
     }
 
     private void handlePlayPause() {
+        if (this.playerController.getCurrentTrack() != null) {
+            switch (this.playerController.getState()) {
+                case PLAYING -> this.playerController.pause();
+                case PAUSED -> this.playerController.resume();
+                default -> {
+                    return;
+                }
+            }
+            updateControls();
+            return;
+        }
         switch (this.audioEngine.getState()) {
             case PLAYING -> this.audioEngine.pause();
             case PAUSED -> this.audioEngine.resume();
@@ -648,9 +707,18 @@ public class MusicLibraryScreen extends Screen {
     private void cycleTestTrack() {
         this.testTrackIndex = (this.testTrackIndex + 1) % TEST_TRACKS.length;
         ModConfig.getInstance().setLastTestTrackIndex(this.testTrackIndex);
-        this.audioEngine.stop();
+        stopPlayback();
         if (this.formatButton != null) {
             this.formatButton.setMessage(Component.literal(TEST_TRACK_LABELS[this.testTrackIndex]));
+        }
+        updateControls();
+    }
+
+    private void stopPlayback() {
+        if (this.playerController.getCurrentTrack() != null) {
+            this.playerController.stop();
+        } else {
+            this.audioEngine.stop();
         }
         updateControls();
     }
@@ -667,6 +735,9 @@ public class MusicLibraryScreen extends Screen {
                 || state == PlaybackState.PAUSED
                 || state == PlaybackState.BUFFERING
                 || state == PlaybackState.RESOLVING;
+        if (this.formatButton != null) {
+            this.formatButton.active = this.playerController.getCurrentTrack() == null;
+        }
     }
 
     private Component playPauseIcon() {
@@ -820,7 +891,8 @@ public class MusicLibraryScreen extends Screen {
         private void syncFromEngine() {
             long durationMs = this.audioEngine.getDurationMs();
             PlaybackState state = this.audioEngine.getState();
-            this.active = durationMs > 0L
+            this.active = this.audioEngine.isSeekSupported()
+                    && durationMs > 0L
                     && (state == PlaybackState.PLAYING || state == PlaybackState.PAUSED);
             if (!this.dragging) {
                 this.value = durationMs <= 0L

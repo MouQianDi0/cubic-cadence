@@ -1,5 +1,123 @@
 # Changelog
 
+## 2026-08-20 17:28:28 - 修复问题（在线播放提前切歌与自动切歌卡顿）
+
+- **变更概述**：修复在线音乐在结尾前几十秒被误判结束并自动跳到下一首，以及切歌时客户端渲染线程同步关闭网络/解码资源导致游戏短时卡死的问题。
+- **修改文件**：
+  - `src/client/java/com/cubiccadence/client/playback/JavaSoundStreamingAudioStream.java`
+  - `src/client/java/com/cubiccadence/client/playback/AudioEngine.java`
+  - `src/test/java/com/cubiccadence/client/playback/JavaSoundStreamingAudioStreamTest.java`（新增）
+  - `src/test/java/com/cubiccadence/client/playback/PlayerControllerTest.java`
+  - `docs/design.md`
+  - `CHANGELOG.md`
+- **变更内容**：
+  - 将在线流生命周期明确拆分为 `RUNNING / EOF / FAILED / CANCELLED`，不再把声音线程一次取数超时当作真正 EOF；短时断流改为有限静音保活并展示缓冲状态，数据恢复后继续播放，连续断流超过 10 秒转为错误；
+  - 按 PCM 格式累计真实解码时长，并与 `PlaybackSource.playableDurationMs` 比较；早于声明时长超过 `max(5 秒, 2%)` 的 EOF 视为流异常，不触发自动下一首；试听源继续以平台返回的实际可播放时长为准；
+  - 停止、自然结束、失败和切歌时只同步取消生产任务、清空队列和更新状态，JavaSound/HTTP 底层资源交给最多两个专用守护清理线程关闭，避免渲染 tick 等待网络锁或解码锁；
+  - 保持 PCM 队列最多 16 个 64 KiB 块（硬上限 1 MiB），静音保活不进入该队列，OpenAL 继续使用原版四段流缓冲，不缓存整首歌曲；
+  - 增加暂时断流恢复、真正 EOF、持久失败、提前 EOF、非阻塞关闭、内存上限以及播放错误不自动切歌测试。
+- **风险**：断流容忍窗口固定为 10 秒，极差网络下会先播放静音再报告失败；播放源声明时长若平台返回错误，可能被提前结束保护判为异常；自动测试无法建立真实 Minecraft OpenAL 上下文，仍需 Windows 游戏实例长时间播放验证。
+- **验证结果**：`\.\gradlew.bat compileJava compileClientJava compileTestJava test` 全部通过，47 项测试零失败；`zh_cn.json`、`en_us.json` 均解析成功，各 112 个键且键集合一致；`git diff --check` 无空白错误，仅有工作区既有 LF→CRLF 提示。真实网络抖动恢复、歌曲完整播放至结尾、自动下一首无卡顿及长时间内存表现仍需 Windows 游戏实例人工复测。
+
+## 2026-08-20 16:47:45 - 修复问题（在线播放 OpenAL 流式缓冲无法入队）
+
+- **变更概述**：修复在线播放已成功获取和解码 MP3、但 OpenAL 持续报告 `Creating buffer: Invalid operation` 且没有声音的问题。
+- **修改文件**：
+  - `src/client/java/com/cubiccadence/client/playback/AudioEngine.java`
+  - `docs/design.md`
+  - `CHANGELOG.md`
+- **变更内容**：
+  - 在 Minecraft 声音线程中停止在线播放 Source 后，显式执行 `AL_BUFFER = 0` 解除静音引导静态缓冲，再挂载原版 `AudioStream` 流式队列，避免同一 Source 同时处于静态缓冲与队列缓冲模式；
+  - 静态引导缓冲改为在声音线程、且确认解绑后释放，避免跨线程调用 OpenAL 或删除仍绑定的缓冲；
+  - 流式队列挂载后读取 `AL_BUFFERS_QUEUED` 验证实际入队数量，只有至少一个缓冲成功入队才切换为 `PLAYING`；解绑或入队失败时立即停止声道、关闭网络流并进入单次错误状态，防止声音线程无限重试和持续刷屏；
+  - 保持网易云播放地址解析、后台 HTTP/MP3 解码、Cookie/URL 日志保护、权限限制和本地 WAV/MP3 播放路径不变。
+- **风险**：修复依赖 Minecraft 26.2 当前 `Channel` 的 OpenAL Source 实现和声音线程执行顺序；自动测试没有真实 OpenAL 上下文，必须重新启动 Windows 游戏实例确认出声、错误日志消失以及停止/切歌资源释放。
+- **验证结果**：`.\gradlew.bat compileJava compileClientJava compileTestJava test` 全部通过，39 项测试零失败；`zh_cn.json`、`en_us.json` 均解析成功，各 112 个键且键集合一致；`git diff --check` 无空白错误，仅有工作区既有 LF→CRLF 提示。真实 OpenAL 播放、错误日志消失、暂停/切歌和资源释放仍需重新启动游戏实例人工复测。
+
+## 2026-08-20 16:22:39 - 新增功能（第三阶段在线播放、队列与播放模式）
+
+- **变更概述**：接入网易云临时播放源解析和基于 Minecraft 原版 `AudioStream`/OpenAL 声道的 MP3 流式缓冲；歌单详情页支持点击播放、全局控制和四种播放模式，并明确展示试听及权限限制。
+- **修改文件**：
+  - `src/main/java/com/cubiccadence/model/PlaybackAccess.java`（新增）
+  - `src/main/java/com/cubiccadence/model/PlaybackSource.java`
+  - `src/main/java/com/cubiccadence/provider/MusicProvider.java`
+  - `src/client/java/com/cubiccadence/client/CubicCadenceClient.java`
+  - `src/client/java/com/cubiccadence/client/playback/AudioEngine.java`
+  - `src/client/java/com/cubiccadence/client/playback/JavaSoundStreamingAudioStream.java`（新增）
+  - `src/client/java/com/cubiccadence/client/playback/PlaybackEngine.java`（新增）
+  - `src/client/java/com/cubiccadence/client/playback/PlaybackQueue.java`
+  - `src/client/java/com/cubiccadence/client/playback/PlayerController.java`
+  - `src/client/java/com/cubiccadence/client/provider/UnavailableMusicProvider.java`
+  - `src/client/java/com/cubiccadence/client/provider/netease/NeteaseApiClient.java`
+  - `src/client/java/com/cubiccadence/client/provider/netease/NeteaseMusicProvider.java`
+  - `src/client/java/com/cubiccadence/client/ui/screen/MusicLibraryScreen.java`
+  - `src/client/java/com/cubiccadence/client/ui/screen/MusicSettingsScreen.java`
+  - `src/client/java/com/cubiccadence/client/ui/screen/PlaylistDetailScreen.java`
+  - `src/client/resources/assets/cubic-cadence/lang/zh_cn.json`
+  - `src/client/resources/assets/cubic-cadence/lang/en_us.json`
+  - `src/test/java/com/cubiccadence/client/auth/AuthManagerTest.java`
+  - `src/test/java/com/cubiccadence/client/library/MusicLibraryManagerTest.java`
+  - `src/test/java/com/cubiccadence/client/library/PlaylistDetailManagerTest.java`
+  - `src/test/java/com/cubiccadence/client/playback/PlaybackQueueTest.java`（新增）
+  - `src/test/java/com/cubiccadence/client/playback/PlayerControllerTest.java`（新增）
+  - `src/test/java/com/cubiccadence/client/provider/netease/NeteaseApiClientTest.java`
+  - `docs/design.md`
+  - `CHANGELOG.md`
+- **变更内容**：
+  - `MusicProvider.resolvePlaybackSource` 显式接收当前 `AuthSession`；网易云实现调用 `/song/url/v1`，按低/标准/高映射 `standard/higher/exhigh`，不发送 `unblock`，不调用解灰接口，不记录 Cookie 或完整播放地址；HTTP 媒体地址升级为 HTTPS，播放源仅保存在内存并按 `expi` 标记过期时间；
+  - `PlaybackSource` 增加不可变请求头、完整/试听访问类型和实际可播放时长；平台返回 `freeTrialInfo` 时只播放原响应提供的试听内容并在界面标注，不伪装为完整歌曲；无地址、非 MP3 或无损格式均 fail-closed；
+  - 新增后台 HTTP/JavaSound MP3 解码流，使用至多 16 个 64 KiB PCM 块进行有界预缓冲；Minecraft 原版声音线程只从队列消费 PCM，并通过原生四段 `AudioStream` OpenAL 缓冲播放，停止、切歌、自然结束和关闭客户端时释放网络流与声道资源；
+  - `PlayerController` 统一持有当前歌曲、临时来源、异步代次和播放状态；登录失效立即停止，快速切歌会丢弃迟到结果，明确受限歌曲不会请求播放源，解析失败按当前队列有限跳过；
+  - `PlaybackQueue` 支持从点击歌曲开始的当前详情页队列、受限歌曲跳过、顺序播放、单曲循环、列表循环和带历史顺序的随机播放；详情页增加点击播放、当前项高亮、上一首/播放暂停/下一首/模式切换和试听/缓冲状态，主页控制栏继续控制同一个全局播放器；
+  - 设置页增加在线播放音质循环选择。本阶段仅支持 MP3 的低/标准/高音质；无损不会静默降级，在线任意位置 seek 保持禁用并留待后续流式 seek 阶段。
+- **风险**：`api-enhanced` 与网易云媒体 CDN 均非稳定官方契约，字段、地址有效期、重定向和 MP3 编码可能变化；JavaSound SPI 与 Minecraft 声道队列的真实长时间表现需 Windows 游戏实例确认；当前队列仅包含歌单详情已加载的当前 50 首；无损 FLAC 和在线任意位置 seek 不在本阶段范围。
+- **验证结果**：`.\gradlew.bat compileJava compileClientJava compileTestJava test` 全部通过，39 项测试零失败；`zh_cn.json`、`en_us.json` 均解析成功，各 112 个键且键集合完全一致；`git diff --check` 无空白错误，仅有工作区既有 LF→CRLF 提示。JDK 25 仍输出既有 JNA native-access 与 LWJGL Unsafe 未来兼容性警告，不影响通过。真实在线播放、约四秒预缓冲、权限/试听状态、连续切歌、资源释放和四种模式仍需启动游戏人工确认。
+
+## 2026-08-20 15:43:10 - 新增功能（第二阶段歌单详情按需加载与歌曲权限展示）
+
+- **变更概述**：主页歌单卡片增加悬停和点击交互；只有玩家打开歌单详情后才分页请求歌曲，详情页展示歌曲封面、名称、歌手、专辑、时长及可播放、不可播放、版权受限、会员不足、地区受限等状态。
+- **修改文件**：
+  - `src/main/java/com/cubiccadence/model/Availability.java`
+  - `src/main/java/com/cubiccadence/model/MusicErrorCode.java`
+  - `src/main/java/com/cubiccadence/model/Track.java`
+  - `src/main/java/com/cubiccadence/provider/MusicProvider.java`
+  - `src/main/java/com/cubiccadence/provider/PlaylistPage.java`
+  - `src/client/java/com/cubiccadence/client/CubicCadenceClient.java`
+  - `src/client/java/com/cubiccadence/client/library/PlaylistDetailManager.java`（新增）
+  - `src/client/java/com/cubiccadence/client/provider/UnavailableMusicProvider.java`
+  - `src/client/java/com/cubiccadence/client/provider/netease/NeteaseApiClient.java`
+  - `src/client/java/com/cubiccadence/client/provider/netease/NeteaseMusicProvider.java`
+  - `src/client/java/com/cubiccadence/client/ui/screen/MusicLibraryScreen.java`
+  - `src/client/java/com/cubiccadence/client/ui/screen/PlaylistDetailScreen.java`（新增）
+  - `src/client/resources/assets/cubic-cadence/lang/zh_cn.json`
+  - `src/client/resources/assets/cubic-cadence/lang/en_us.json`
+  - `src/test/java/com/cubiccadence/client/auth/AuthManagerTest.java`
+  - `src/test/java/com/cubiccadence/client/library/MusicLibraryManagerTest.java`
+  - `src/test/java/com/cubiccadence/client/library/PlaylistDetailManagerTest.java`（新增）
+  - `src/test/java/com/cubiccadence/client/provider/netease/NeteaseApiClientTest.java`
+  - `docs/design.md`
+  - `CHANGELOG.md`
+- **变更内容**：
+  - `MusicProvider.getPlaylistTracks` 显式接收 `AuthSession`，Provider 不持有 Cookie；网易云实现调用 `/playlist/track/all?id=<id>&limit=50&offset=<page*50>`，请求继续在后台线程完成，Cookie 和完整请求地址不写日志；
+  - 将接口 `songs` 与 `privileges` 按歌曲 ID 合并为不可变 `Track`，映射歌手、专辑、封面和时长；权限按地区提示、灰色版权状态、当前播放音质和 `fee` 保守判定，无法可靠识别时显示未知，不绕过任何会员、版权、地区或音质限制；
+  - 新增独立 `PlaylistDetailManager`：启动和歌单摘要同步不请求歌曲，点击歌单后才加载第一页；支持每页 50 首、上一页、下一页、失败重试、同一歌单当前页内存复用，以及退出/换页后的迟到响应隔离；
+  - 新增 `PlaylistDetailScreen`，采用原版 `ObjectSelectionList` 滚动展示歌曲资料与彩色权限标签；主页歌单卡片增加绿色悬停边框和左键命中，返回按钮、ESC 或音乐库快捷键可返回主页；当前阶段明确不触发在线播放；
+  - 新增歌曲字段/六类权限映射测试，以及“点击前零请求”、按需分页、失败重试、退出后忽略迟到响应测试；同步中英文文案和设计说明。
+- **风险**：`api-enhanced` 为第三方逆向实现，`songs`、`privileges`、`pl/plLevel`、`st`、`toast` 和 `fee` 字段可能变化；状态映射采用保守策略，播放阶段仍须以实际播放源响应复核；每页 50 张封面可能增加 GPU/磁盘缓存压力，但只有可见行触发下载且离开页面会释放动态纹理；不同 GUI 缩放下的滚动列表、长歌曲信息和真实权限状态需游戏内人工确认。
+- **验证结果**：在会话级显式选择 JDK 25 后，`.\gradlew.bat compileJava compileClientJava compileTestJava test` 全部通过；`zh_cn.json`、`en_us.json` 均解析成功，各 86 个键且键集合完全一致；`git diff --check` 无空白错误，仅有工作区既有 LF→CRLF 提示。JDK 25 测试仍输出既有 JNA native-access 与 LWJGL Unsafe 未来兼容性警告，不影响通过。需人工确认卡片点击、滚动列表、封面、分页、失败重试、返回路径以及各种真实权益状态。
+
+## 2026-08-20 15:36:11 - 修复问题（GitHub Actions 无法启动 Gradle 构建）
+
+- **变更概述**：移除仓库中绑定本机 Windows JDK 安装目录的 Gradle 配置，避免 Ubuntu GitHub Actions 将该路径误作 Java Home 并在编译前失败。
+- **修改文件**：
+  - `gradle.properties`
+  - `CHANGELOG.md`
+- **变更内容**：
+  - 删除 `org.gradle.java.home=C:/Program Files/Eclipse Adoptium/jdk-25.0.3.9-hotspot` 及其本机路径说明；
+  - GitHub Actions 继续通过 `actions/setup-java` 提供 Microsoft JDK 25，本机开发环境改由 IDE Gradle JVM、`JAVA_HOME` 或用户级 Gradle 配置选择 JDK，不再把机器专属绝对路径提交到仓库。
+- **风险**：未配置 Java 25 的本机终端将无法直接构建，需要先设置会话级或系统级 `JAVA_HOME`，但不会影响已经配置 `actions/setup-java` 的 GitHub Actions。
+- **验证结果**：使用会话级 JDK 25 执行 `.\gradlew.bat build --no-daemon`，构建及测试全部通过（`BUILD SUCCESSFUL`，9 个任务中 5 个执行、4 个为最新状态）；仅保留既有的 JNA native-access、LWJGL Unsafe 未来兼容性警告，以及 `tritonus-share:0.3.7.4` 非标准 SemVer 提示。
+
 ## 2026-08-20 15:08:32 - 新增功能（第一阶段音乐库全量同步、缓存优先启动与远程图片稳定加载）
 
 - **变更概述**：实现第一阶段音乐库同步闭环：同步用户创建、收藏及网易云 `specialType=5` 的红心歌单，支持首次同步进度、手动刷新、缓存先显示再后台刷新和每页 8 项本地分页；同时修复合法网易云 PNG 已下载但在原图片解码链路持续失败、头像与封面只能显示占位的问题。

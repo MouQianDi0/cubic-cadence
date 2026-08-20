@@ -237,7 +237,11 @@ class MusicLibraryManagerTest {
         }
 
         @Override
-        public CompletableFuture<PlaylistPage> getPlaylistTracks(String playlistId, PageRequest pageRequest) {
+        public CompletableFuture<PlaylistPage> getPlaylistTracks(
+                AuthSession session,
+                String playlistId,
+                PageRequest pageRequest
+        ) {
             return unsupported();
         }
 
@@ -247,7 +251,11 @@ class MusicLibraryManagerTest {
         }
 
         @Override
-        public CompletableFuture<PlaybackSource> resolvePlaybackSource(String trackId, AudioQuality quality) {
+        public CompletableFuture<PlaybackSource> resolvePlaybackSource(
+                AuthSession session,
+                String trackId,
+                AudioQuality quality
+        ) {
             return unsupported();
         }
 

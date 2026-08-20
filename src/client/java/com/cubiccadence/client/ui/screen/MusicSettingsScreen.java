@@ -12,6 +12,7 @@ import net.minecraft.client.gui.components.Checkbox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundSource;
+import com.cubiccadence.provider.AudioQuality;
 
 /** Client-only settings reached from the music library gear button. */
 public final class MusicSettingsScreen extends Screen {
@@ -24,6 +25,7 @@ public final class MusicSettingsScreen extends Screen {
     private final AudioEngine audioEngine;
     private VanillaMusicVolumeSlider vanillaMusicVolumeSlider;
     private Checkbox disableVanillaMusicCheckbox;
+    private Button audioQualityButton;
 
     public MusicSettingsScreen(Screen parent) {
         super(Component.translatable("screen.cubic-cadence.settings"));
@@ -67,11 +69,21 @@ public final class MusicSettingsScreen extends Screen {
                         .onValueChange((checkbox, selected) -> handleVanillaMusicToggle(selected))
                         .build()
         );
+        this.audioQualityButton = this.addRenderableWidget(
+                Button.builder(audioQualityMessage(), button -> cycleAudioQuality())
+                        .bounds(
+                                left,
+                                top + (Button.DEFAULT_HEIGHT + CONTROL_GAP) * 3,
+                                CONTROL_WIDTH,
+                                Button.DEFAULT_HEIGHT
+                        )
+                        .build()
+        );
         this.addRenderableWidget(
                 Button.builder(Component.translatable("button.cubic-cadence.done"), button -> onClose())
                         .bounds(
                                 left,
-                                top + (Button.DEFAULT_HEIGHT + CONTROL_GAP) * 3 + 4,
+                                top + (Button.DEFAULT_HEIGHT + CONTROL_GAP) * 4,
                                 CONTROL_WIDTH,
                                 Button.DEFAULT_HEIGHT
                         )
@@ -137,6 +149,25 @@ public final class MusicSettingsScreen extends Screen {
 
     private void setVanillaMusicVolume(double volume) {
         getVanillaMusicOption().set(Math.max(0.0, Math.min(1.0, volume)));
+    }
+
+    private void cycleAudioQuality() {
+        AudioQuality current = ModConfig.getInstance().getAudioQuality();
+        AudioQuality next = switch (current) {
+            case LOW -> AudioQuality.STANDARD;
+            case STANDARD -> AudioQuality.HIGH;
+            case HIGH, LOSSLESS -> AudioQuality.LOW;
+        };
+        ModConfig.getInstance().setAudioQuality(next);
+        this.audioQualityButton.setMessage(audioQualityMessage());
+    }
+
+    private Component audioQualityMessage() {
+        AudioQuality quality = ModConfig.getInstance().getAudioQuality();
+        String suffix = quality.name().toLowerCase();
+        return Component.translatable("setting.cubic-cadence.audio_quality", Component.translatable(
+                "audio_quality.cubic-cadence." + suffix
+        ));
     }
 
     private static final class CubicCadenceVolumeSlider extends AbstractSliderButton {

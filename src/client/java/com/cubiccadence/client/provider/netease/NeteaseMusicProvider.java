@@ -62,9 +62,12 @@ public class NeteaseMusicProvider implements MusicProvider {
     }
 
     @Override
-    public CompletableFuture<PlaylistPage> getPlaylistTracks(String playlistId, PageRequest pageRequest) {
-        // TODO: implement NCM-LIB-003 / NCM-LIB-004 / NCM-TRACK-001
-        return unsupported();
+    public CompletableFuture<PlaylistPage> getPlaylistTracks(
+            AuthSession session,
+            String playlistId,
+            PageRequest pageRequest
+    ) {
+        return apiClient.getPlaylistTracks(session, playlistId, pageRequest);
     }
 
     @Override
@@ -74,9 +77,12 @@ public class NeteaseMusicProvider implements MusicProvider {
     }
 
     @Override
-    public CompletableFuture<PlaybackSource> resolvePlaybackSource(String trackId, AudioQuality quality) {
-        // TODO: implement NCM-PLAY-001 / NCM-PLAY-002
-        return unsupported();
+    public CompletableFuture<PlaybackSource> resolvePlaybackSource(
+            AuthSession session,
+            String trackId,
+            AudioQuality quality
+    ) {
+        return apiClient.resolvePlaybackSource(session, trackId, quality);
     }
 
     @Override

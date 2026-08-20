@@ -12,4 +12,7 @@ public record Track(
         long durationMs,
         Availability availability
 ) {
+    public Track {
+        artists = List.copyOf(artists);
+    }
 }

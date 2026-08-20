@@ -26,6 +26,7 @@ public interface MusicProvider {
     );
 
     CompletableFuture<PlaylistPage> getPlaylistTracks(
+            AuthSession session,
             String playlistId,
             PageRequest pageRequest
     );
@@ -37,6 +38,7 @@ public interface MusicProvider {
     );
 
     CompletableFuture<PlaybackSource> resolvePlaybackSource(
+            AuthSession session,
             String trackId,
             AudioQuality quality
     );

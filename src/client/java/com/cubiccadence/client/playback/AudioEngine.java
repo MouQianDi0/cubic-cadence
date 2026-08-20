@@ -8,6 +8,7 @@ import com.cubiccadence.client.mixin.SoundManagerAccessor;
 import com.cubiccadence.model.PlaybackSource;
 import com.cubiccadence.model.PlaybackState;
 import com.mojang.blaze3d.audio.Channel;
+import com.mojang.blaze3d.audio.OpenAlUtil;
 import com.mojang.blaze3d.audio.SoundBuffer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.sounds.ChannelAccess;
@@ -20,6 +21,10 @@ import org.lwjgl.openal.AL11;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.http.HttpClient;
+import java.time.Duration;
+import javax.sound.sampled.AudioFormat;
+import java.nio.ByteBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
@@ -35,12 +40,15 @@ import java.util.concurrent.atomic.AtomicLong;
  * existing SoundEngine. It never creates a second OpenAL device or modifies
  * MusicManager.currentMusic, so vanilla music and Cubic Cadence can coexist.
  */
-public class AudioEngine implements AutoCloseable {
+public class AudioEngine implements PlaybackEngine, AutoCloseable {
     private static final Identifier LOCAL_EVENT_ID = CubicCadenceClient.id("local_music");
     private static final Identifier LOCAL_BUFFER_ID = CubicCadenceClient.id("generated/local_music");
 
     private final AudioDecoder decoder;
     private final ExecutorService decodeExecutor;
+    private final ExecutorService streamExecutor;
+    private final ExecutorService streamCleanupExecutor;
+    private final HttpClient streamHttpClient;
     private final AtomicLong operationSequence = new AtomicLong();
 
     private volatile PlaybackState state = PlaybackState.IDLE;
@@ -52,7 +60,10 @@ public class AudioEngine implements AutoCloseable {
     private Identifier cachedResource;
     private DecodedAudio cachedAudio;
     private SoundBuffer soundBuffer;
+    private SoundBuffer streamingBootstrapBuffer;
+    private JavaSoundStreamingAudioStream activeStream;
     private LocalMusicSoundInstance currentInstance;
+    private boolean streaming;
     private long playbackStartedNanos;
     private long pausedAtNanos;
     private long totalPausedNanos;
@@ -65,6 +76,20 @@ public class AudioEngine implements AutoCloseable {
             return thread;
         };
         this.decodeExecutor = Executors.newSingleThreadExecutor(threadFactory);
+        this.streamExecutor = Executors.newFixedThreadPool(2, runnable -> {
+            Thread thread = new Thread(runnable, "cubic-cadence-online-audio");
+            thread.setDaemon(true);
+            return thread;
+        });
+        this.streamCleanupExecutor = Executors.newFixedThreadPool(2, runnable -> {
+            Thread thread = new Thread(runnable, "cubic-cadence-audio-cleanup");
+            thread.setDaemon(true);
+            return thread;
+        });
+        this.streamHttpClient = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(10))
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .build();
     }
 
     public void start() {
@@ -104,12 +129,16 @@ public class AudioEngine implements AutoCloseable {
 
     public void play(PlaybackSource source) {
         Objects.requireNonNull(source, "source");
-        if (!"file".equalsIgnoreCase(source.uri().getScheme())) {
-            fail("Stage 2 only supports local file playback", null);
+        ensureOpen();
+        if ("http".equalsIgnoreCase(source.uri().getScheme())
+                || "https".equalsIgnoreCase(source.uri().getScheme())) {
+            playOnline(source);
             return;
         }
-
-        ensureOpen();
+        if (!"file".equalsIgnoreCase(source.uri().getScheme())) {
+            fail("Unsupported playback source scheme", null);
+            return;
+        }
         long operation = this.operationSequence.incrementAndGet();
         stopCurrentInstance();
         this.lastError = null;
@@ -167,6 +196,9 @@ public class AudioEngine implements AutoCloseable {
     }
 
     public void seek(long positionMs) {
+        if (this.streaming) {
+            return;
+        }
         PlaybackState currentState = this.state;
         if ((currentState != PlaybackState.PLAYING && currentState != PlaybackState.PAUSED)
                 || this.durationMs <= 0L) {
@@ -212,7 +244,8 @@ public class AudioEngine implements AutoCloseable {
         if (this.playbackStartedNanos == 0L) {
             return 0L;
         }
-        long endNanos = this.state == PlaybackState.PAUSED && this.pausedAtNanos != 0L
+        long endNanos = (this.state == PlaybackState.PAUSED || this.state == PlaybackState.BUFFERING)
+                && this.pausedAtNanos != 0L
                 ? this.pausedAtNanos
                 : System.nanoTime();
         long elapsedNanos = Math.max(0L, endNanos - this.playbackStartedNanos - this.totalPausedNanos);
@@ -223,14 +256,36 @@ public class AudioEngine implements AutoCloseable {
         return this.durationMs;
     }
 
+    public boolean isSeekSupported() {
+        return !this.streaming;
+    }
+
     public void tick() {
         LocalMusicSoundInstance instance = this.currentInstance;
-        if (instance == null || (this.state != PlaybackState.PLAYING && this.state != PlaybackState.PAUSED)) {
+        if (instance == null || (this.state != PlaybackState.PLAYING
+                && this.state != PlaybackState.PAUSED
+                && this.state != PlaybackState.BUFFERING)) {
             return;
         }
+        JavaSoundStreamingAudioStream stream = this.activeStream;
+        updateStreamingBufferingState(stream);
         if (!Minecraft.getInstance().getSoundManager().isActive(instance)) {
             this.currentInstance = null;
-            this.state = PlaybackState.ENDED;
+            this.activeStream = null;
+            this.streaming = false;
+            closeQuietly(stream);
+            if (stream != null && stream.streamState() == JavaSoundStreamingAudioStream.StreamState.FAILED) {
+                this.lastError = stream.failure() == null
+                        ? "Online audio stream failed"
+                        : stream.failure().getMessage();
+                this.state = PlaybackState.ERROR;
+            } else if (stream == null
+                    || stream.streamState() == JavaSoundStreamingAudioStream.StreamState.EOF) {
+                this.state = PlaybackState.ENDED;
+            } else {
+                this.state = PlaybackState.ERROR;
+                this.lastError = "Online audio channel stopped before the stream completed";
+            }
             this.pausedAtNanos = 0L;
             return;
         }
@@ -250,12 +305,44 @@ public class AudioEngine implements AutoCloseable {
         stop();
         this.closed = true;
         this.decodeExecutor.shutdownNow();
+        this.streamExecutor.shutdownNow();
+        this.streamCleanupExecutor.shutdown();
         this.cachedAudio = null;
         this.cachedResource = null;
         if (this.soundBuffer != null) {
             this.soundBuffer.discardAlBuffer();
         }
         this.soundBuffer = null;
+        if (this.streamingBootstrapBuffer != null) {
+            this.streamingBootstrapBuffer.discardAlBuffer();
+        }
+        this.streamingBootstrapBuffer = null;
+    }
+
+    private void playOnline(PlaybackSource source) {
+        long operation = this.operationSequence.incrementAndGet();
+        stopCurrentInstance();
+        this.lastError = null;
+        this.durationMs = source.playableDurationMs();
+        this.state = PlaybackState.BUFFERING;
+        Minecraft minecraft = Minecraft.getInstance();
+        JavaSoundStreamingAudioStream.open(
+                        source,
+                        this.streamHttpClient,
+                        this.streamExecutor,
+                        this.streamCleanupExecutor
+                )
+                .whenComplete((stream, throwable) -> minecraft.execute(() -> {
+                    if (operation != this.operationSequence.get() || this.closed) {
+                        closeQuietly(stream);
+                        return;
+                    }
+                    if (throwable != null) {
+                        fail("Unable to buffer online MP3 stream", null);
+                        return;
+                    }
+                    installStreamingAndPlay(operation, stream);
+                }));
     }
 
     private DecodedAudio decodeResource(Minecraft minecraft, Identifier resourceId) {
@@ -306,11 +393,106 @@ public class AudioEngine implements AutoCloseable {
         }
 
         this.currentInstance = instance;
+        this.streaming = false;
         this.durationMs = decoded.durationMs();
         this.playbackStartedNanos = System.nanoTime();
         this.pausedAtNanos = 0L;
         this.totalPausedNanos = 0L;
         this.state = PlaybackState.PLAYING;
+    }
+
+    private void installStreamingAndPlay(long operation, JavaSoundStreamingAudioStream stream) {
+        if (operation != this.operationSequence.get() || this.closed) {
+            closeQuietly(stream);
+            return;
+        }
+        SoundManager soundManager = Minecraft.getInstance().getSoundManager();
+        SoundEngine soundEngine = ((SoundManagerAccessor) soundManager).cubicCadence$getSoundEngine();
+        SoundBufferLibrary soundBuffers = ((SoundEngineAccessor) soundEngine).cubicCadence$getSoundBuffers();
+        SoundBuffer previousBootstrapBuffer = this.streamingBootstrapBuffer;
+        AudioFormat silenceFormat = new AudioFormat(44_100.0f, 16, 2, true, false);
+        SoundBuffer bootstrapBuffer = new SoundBuffer(ByteBuffer.allocateDirect(4_410 * 4), silenceFormat);
+        this.streamingBootstrapBuffer = bootstrapBuffer;
+        LocalMusicSoundInstance instance = new LocalMusicSoundInstance(
+                LOCAL_EVENT_ID,
+                LOCAL_BUFFER_ID,
+                this.volume
+        );
+        Map<Identifier, CompletableFuture<SoundBuffer>> cache =
+                ((SoundBufferLibraryAccessor) soundBuffers).cubicCadence$getCache();
+        cache.put(instance.bufferPath(), CompletableFuture.completedFuture(bootstrapBuffer));
+        SoundEngine.PlayResult result = soundManager.play(instance);
+        if (result == SoundEngine.PlayResult.NOT_STARTED) {
+            closeQuietly(stream);
+            fail("Minecraft SoundEngine did not start the online track", null);
+            return;
+        }
+        this.currentInstance = instance;
+        this.activeStream = stream;
+        this.streaming = true;
+        ChannelAccess.ChannelHandle handle = currentHandle();
+        if (handle == null) {
+            stopCurrentInstance();
+            fail("Minecraft SoundEngine did not create an online audio channel", null);
+            return;
+        }
+        handle.execute(channel -> {
+            if (operation != this.operationSequence.get() || this.closed) {
+                closeQuietly(stream);
+                return;
+            }
+            if (previousBootstrapBuffer != null && previousBootstrapBuffer != bootstrapBuffer) {
+                previousBootstrapBuffer.discardAlBuffer();
+            }
+            channel.stop();
+            int sourceId = ((ChannelAccessor) channel).cubicCadence$getSource();
+            AL10.alSourcei(sourceId, AL10.AL_BUFFER, 0);
+            if (OpenAlUtil.checkALError("Detaching Cubic Cadence bootstrap buffer")) {
+                failStreamingChannel(instance, stream, channel, operation,
+                        "Unable to detach the online audio bootstrap buffer");
+                return;
+            }
+            bootstrapBuffer.discardAlBuffer();
+            if (this.streamingBootstrapBuffer == bootstrapBuffer) {
+                this.streamingBootstrapBuffer = null;
+            }
+            channel.attachBufferStream(stream);
+            int queuedBuffers = AL10.alGetSourcei(sourceId, AL10.AL_BUFFERS_QUEUED);
+            if (OpenAlUtil.checkALError("Inspecting Cubic Cadence stream queue") || queuedBuffers <= 0) {
+                failStreamingChannel(instance, stream, channel, operation,
+                        "Minecraft SoundEngine could not queue the online audio stream");
+                return;
+            }
+            channel.setVolume(this.volume);
+            channel.play();
+            this.playbackStartedNanos = System.nanoTime();
+            this.pausedAtNanos = 0L;
+            this.totalPausedNanos = 0L;
+            this.state = PlaybackState.PLAYING;
+        });
+    }
+
+    private void failStreamingChannel(
+            LocalMusicSoundInstance instance,
+            JavaSoundStreamingAudioStream stream,
+            Channel channel,
+            long operation,
+            String message
+    ) {
+        channel.stop();
+        closeQuietly(stream);
+        if (operation != this.operationSequence.get()) {
+            return;
+        }
+        instance.requestStop();
+        if (this.currentInstance == instance) {
+            this.currentInstance = null;
+        }
+        if (this.activeStream == stream) {
+            this.activeStream = null;
+        }
+        this.streaming = false;
+        fail(message, null);
     }
 
     private ChannelAccess.ChannelHandle currentHandle() {
@@ -325,12 +507,38 @@ public class AudioEngine implements AutoCloseable {
 
     private void stopCurrentInstance() {
         LocalMusicSoundInstance instance = this.currentInstance;
-        if (instance == null) {
+        if (instance != null) {
+            instance.requestStop();
+            Minecraft.getInstance().getSoundManager().stop(instance);
+            this.currentInstance = null;
+        }
+        JavaSoundStreamingAudioStream stream = this.activeStream;
+        this.activeStream = null;
+        this.streaming = false;
+        closeQuietly(stream);
+    }
+
+    private void updateStreamingBufferingState(JavaSoundStreamingAudioStream stream) {
+        if (stream == null
+                || stream.streamState() != JavaSoundStreamingAudioStream.StreamState.RUNNING
+                || this.state == PlaybackState.PAUSED) {
             return;
         }
-        instance.requestStop();
-        Minecraft.getInstance().getSoundManager().stop(instance);
-        this.currentInstance = null;
+        if (stream.isStarved()) {
+            if (this.state == PlaybackState.PLAYING) {
+                this.pausedAtNanos = System.nanoTime();
+                this.state = PlaybackState.BUFFERING;
+            }
+            return;
+        }
+        if (this.state == PlaybackState.BUFFERING && this.playbackStartedNanos != 0L) {
+            long now = System.nanoTime();
+            if (this.pausedAtNanos != 0L) {
+                this.totalPausedNanos += now - this.pausedAtNanos;
+                this.pausedAtNanos = 0L;
+            }
+            this.state = PlaybackState.PLAYING;
+        }
     }
 
     private void fail(String message, Throwable throwable) {
@@ -347,6 +555,13 @@ public class AudioEngine implements AutoCloseable {
         this.playbackStartedNanos = 0L;
         this.pausedAtNanos = 0L;
         this.totalPausedNanos = 0L;
+    }
+
+    private static void closeQuietly(JavaSoundStreamingAudioStream stream) {
+        if (stream == null) {
+            return;
+        }
+        stream.close();
     }
 
     private void resetClockTo(long positionMs, boolean paused) {
