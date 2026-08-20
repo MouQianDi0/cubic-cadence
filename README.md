@@ -98,23 +98,22 @@ IDE 的配置与运行方式请参考 [Fabric 官方文档](https://docs.fabricm
 
 ## 界面预览
 
-> 以下为插图占位区域。将你的截图放入 `docs/screenshots/`，并按对应文件名替换即可显示。
 
 ### 音乐库主页
 
-### ![音乐库主页](D:\mc-mod\cubic-cadence-template-26.2\docs\screenshots\cc16c0a74d3d4c5908b7f9cc5c6548c8.jpg)
+![音乐库主页](docs\screenshots\music-library.jpg)
 
 ### 扫码登录
 
-![扫码登录](D:\mc-mod\cubic-cadence-template-26.2\docs\screenshots\0048a75d6b204bcaacc32b059083a0ce.jpg)
+![扫码登录](docs\screenshots\login-qr.jpg)
 
 ### 歌单详情
 
-![歌单详情](D:\mc-mod\cubic-cadence-template-26.2\docs\screenshots\屏幕截图 2026-08-20 223240.png)
+![歌单详情](docs\screenshots\playlist-detail.png)
 
 ### 设置界面
 
-![设置界面](D:\mc-mod\cubic-cadence-template-26.2\docs\screenshots\屏幕截图 2026-08-20 193329.png)
+![设置界面](docs\screenshots\settings.png)
 
 ## 目录结构
 
