@@ -252,7 +252,9 @@ public record UserProfile(
         String providerId,
         String userId,
         String displayName,
-        String avatarUrl
+        String avatarUrl,
+        int level,
+        MembershipTier membershipTier
 ) {}
 
 // Artist.java
@@ -330,6 +332,13 @@ public enum PlaylistOwnership {
     SPECIAL
 }
 
+public enum MembershipTier {
+    UNKNOWN,
+    NON_MEMBER,
+    MUSIC_PACKAGE,
+    BLACK_VINYL_VIP
+}
+
 // MusicErrorCode.java
 public enum MusicErrorCode {
     NETWORK_UNAVAILABLE,
@@ -385,6 +394,12 @@ public record PlaylistPage(
         String nextCursor
 ) {}
 
+public record PlaylistSummaryPage(
+        List<PlaylistSummary> items,
+        boolean hasNext,
+        Integer total
+) {}
+
 // MusicProvider.java
 public interface MusicProvider {
     String id();
@@ -395,9 +410,13 @@ public interface MusicProvider {
 
     CompletableFuture<AuthSession> refresh(AuthSession session);
 
-    CompletableFuture<UserProfile> getCurrentUser();
+    CompletableFuture<UserProfile> getCurrentUser(AuthSession session);
 
-    CompletableFuture<List<PlaylistSummary>> getUserPlaylists();
+    CompletableFuture<PlaylistSummaryPage> getUserPlaylists(
+            AuthSession session,
+            String userId,
+            PageRequest pageRequest
+    );
 
     CompletableFuture<PlaylistPage> getPlaylistTracks(
             String playlistId,
@@ -683,9 +702,16 @@ public class MusicLibraryScreen extends Screen {
     @Override
     public void close();
 }
+
+// MusicSettingsScreen.java
+public final class MusicSettingsScreen extends Screen {
+    public MusicSettingsScreen(Screen parent);
+}
 ```
 
-第一阶段 `MusicLibraryScreen` 为可打开/关闭的空界面，使用第 5 节列出的原版素材渲染背景与标题，不包含真实歌单数据。
+当前 `MusicLibraryScreen` 在登录后展示账号头像、昵称、完整用户标识、等级和会员状态；中部为居中的 4 列 × 2 行用户歌单大封面网格，封面最大逻辑尺寸为 176×176，通过紧贴网格下方的「上一页 / 下一页」按每页 8 项向 `api-enhanced` 分页请求。主页右下角齿轮打开 `MusicSettingsScreen`，方律音量、原版音乐音量和禁用原版背景音乐均集中在设置页。
+
+`NeteaseApiClient` 以 `/user/account` 的身份资料为基础，通过认证会话调用 `/user/level` 与 `/vip/info` 补充等级和会员；明确无权益时显示非会员，补充接口不可用时显示未知而不回退登录状态。`MusicLibraryManager` 负责异步资料/歌单状态与迟到响应隔离，`RemoteTextureCache` 在客户端后台下载网易云图片并只在渲染线程注册动态纹理；下载、HTTP、大小、解码和注册失败采用有限重试及脱敏阶段日志，图片最终失败仍只降级占位，不改变登录状态。
 
 ## 10. 与网易云接口的映射
 

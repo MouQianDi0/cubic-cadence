@@ -4,16 +4,15 @@ import com.cubiccadence.auth.AuthSession;
 import com.cubiccadence.auth.AuthorizationChallenge;
 import com.cubiccadence.auth.AuthorizationResult;
 import com.cubiccadence.model.PlaybackSource;
-import com.cubiccadence.model.PlaylistSummary;
 import com.cubiccadence.model.UserProfile;
 import com.cubiccadence.provider.AudioQuality;
 import com.cubiccadence.provider.MusicProvider;
 import com.cubiccadence.provider.PageRequest;
 import com.cubiccadence.provider.PlaylistPage;
+import com.cubiccadence.provider.PlaylistSummaryPage;
 import com.cubiccadence.provider.SearchPage;
 import com.cubiccadence.provider.SearchType;
 
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 /** Fail-closed provider used until an api-enhanced base URL has been configured. */
@@ -39,12 +38,16 @@ public final class UnavailableMusicProvider implements MusicProvider {
     }
 
     @Override
-    public CompletableFuture<UserProfile> getCurrentUser() {
+    public CompletableFuture<UserProfile> getCurrentUser(AuthSession session) {
         return unavailable();
     }
 
     @Override
-    public CompletableFuture<List<PlaylistSummary>> getUserPlaylists() {
+    public CompletableFuture<PlaylistSummaryPage> getUserPlaylists(
+            AuthSession session,
+            String userId,
+            PageRequest pageRequest
+    ) {
         return unavailable();
     }
 

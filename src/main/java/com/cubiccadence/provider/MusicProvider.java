@@ -4,10 +4,8 @@ import com.cubiccadence.auth.AuthSession;
 import com.cubiccadence.auth.AuthorizationChallenge;
 import com.cubiccadence.auth.AuthorizationResult;
 import com.cubiccadence.model.PlaybackSource;
-import com.cubiccadence.model.PlaylistSummary;
 import com.cubiccadence.model.UserProfile;
 
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public interface MusicProvider {
@@ -19,9 +17,13 @@ public interface MusicProvider {
 
     CompletableFuture<AuthSession> refresh(AuthSession session);
 
-    CompletableFuture<UserProfile> getCurrentUser();
+    CompletableFuture<UserProfile> getCurrentUser(AuthSession session);
 
-    CompletableFuture<List<PlaylistSummary>> getUserPlaylists();
+    CompletableFuture<PlaylistSummaryPage> getUserPlaylists(
+            AuthSession session,
+            String userId,
+            PageRequest pageRequest
+    );
 
     CompletableFuture<PlaylistPage> getPlaylistTracks(
             String playlistId,

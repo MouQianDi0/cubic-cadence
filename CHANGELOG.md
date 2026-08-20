@@ -1,5 +1,62 @@
 # Changelog
 
+## 2026-08-20 14:10:02 - 修复问题（主页设置分层、歌单大封面居中及账号远程资料修复）
+
+- **变更概述**：依据游戏内截图重新整理音乐库主页，将音量相关控件迁入独立设置页并在右下角增加齿轮入口；将每页 8 个歌单封面放大到最大 176×176 并连同分页整体居中；修复远程头像/封面首次失败后不再恢复的问题，并通过额外资料接口补全用户等级和会员状态。
+- **修改文件**：
+  - `src/main/java/com/cubiccadence/model/UserProfile.java`
+  - `src/main/java/com/cubiccadence/model/MembershipTier.java`
+  - `src/client/java/com/cubiccadence/client/provider/netease/NeteaseApiClient.java`
+  - `src/client/java/com/cubiccadence/client/ui/screen/MusicLibraryScreen.java`
+  - `src/client/java/com/cubiccadence/client/ui/screen/MusicSettingsScreen.java`（新增）
+  - `src/client/java/com/cubiccadence/client/ui/texture/RemoteTextureCache.java`
+  - `src/client/resources/assets/cubic-cadence/lang/zh_cn.json`
+  - `src/client/resources/assets/cubic-cadence/lang/en_us.json`
+  - `src/test/java/com/cubiccadence/client/provider/netease/NeteaseApiClientTest.java`
+  - `src/test/java/com/cubiccadence/client/ui/texture/RemoteTextureCacheTest.java`（新增）
+  - `docs/design.md`
+  - `CHANGELOG.md`
+- **变更内容**：
+  - 新增 `MusicSettingsScreen`，集中承载方律音量、原版音乐音量和禁用原版背景音乐；设置即时生效并沿用既有持久化，主页右下角以齿轮按钮进入，完成或 ESC 返回原主页；
+  - `MusicLibraryScreen` 移除底部设置行，仅保留播放进度和媒体控制；歌单保持 4 列 × 2 行、每页 8 项，封面最大尺寸由 88 提升到 176，依据窗口宽高自适应收缩；网格在账号栏与播放器之间整体居中，分页紧贴网格底部；
+  - 账号资料先读取 `/user/account` 的身份信息，再以同一认证会话异步请求 `/user/level` 和 `/vip/info` 补充等级与会员；明确无权益显示非会员，补充接口失败显示未知且不使登录失败；Cookie 和完整请求地址不写日志；
+  - `RemoteTextureCache` 修正远程纹理首次失败后永久停留占位的问题：允许每轮最多 3 次、间隔 1.5 秒的重试，最终失败 30 秒后可重新发起一轮；区分网络、HTTP、大小、解码和注册阶段，日志仅记录 CDN 主机及失败阶段；继续限制网易云图片域、响应大小、尺寸和像素数，并在渲染线程注册/释放纹理；
+  - 增加资料补充、黑胶 VIP、明确非会员、接口不可用降级，以及 CDN URL HTTPS 升级和伪造域名拒绝测试；同步中英文文案与设计说明。
+- **风险**：`api-enhanced` 为第三方逆向服务，`/user/level`、`/vip/info` 字段可能变化；远程纹理重试会产生少量额外 CDN 请求但已限制次数和周期；176×176 为逻辑最大值，小窗口会自动缩小；齿轮字符及 GPU 动态纹理需在真实游戏实例中确认字体和渲染表现。
+- **验证结果**：`\.\gradlew.bat compileJava compileClientJava compileTestJava test` 全部通过；`zh_cn.json`、`en_us.json` 均通过 PowerShell JSON 解析；`git diff --check` 无空白错误，仅输出工作区既有 LF→CRLF 提示；JDK 25 运行 JNA 测试时仍有既有 native-access 未来兼容性警告，不影响测试通过。
+
+## 2026-08-20 12:46:30 - 新增功能（账号资料、真实歌单封面与主页内嵌分页）
+
+- **变更概述**：按确认的主页线框重新排版音乐库；登录成功或恢复会话后异步获取网易云账号资料和用户歌单，展示头像、昵称、完整 UID、等级及会员状态；歌单封面采用 4 列 × 2 行、每页 8 项的主页内嵌分页。
+- **修改文件**：
+  - `src/main/java/com/cubiccadence/model/UserProfile.java`
+  - `src/main/java/com/cubiccadence/model/MembershipTier.java`（新增）
+  - `src/main/java/com/cubiccadence/provider/MusicProvider.java`
+  - `src/main/java/com/cubiccadence/provider/PlaylistSummaryPage.java`（新增）
+  - `src/client/java/com/cubiccadence/client/CubicCadenceClient.java`
+  - `src/client/java/com/cubiccadence/client/library/MusicLibraryManager.java`（新增）
+  - `src/client/java/com/cubiccadence/client/provider/UnavailableMusicProvider.java`
+  - `src/client/java/com/cubiccadence/client/provider/netease/NeteaseApiClient.java`
+  - `src/client/java/com/cubiccadence/client/provider/netease/NeteaseMusicProvider.java`
+  - `src/client/java/com/cubiccadence/client/ui/screen/MusicLibraryScreen.java`
+  - `src/client/java/com/cubiccadence/client/ui/texture/RemoteTextureCache.java`（新增）
+  - `src/client/resources/assets/cubic-cadence/lang/zh_cn.json`、`en_us.json`
+  - `src/test/java/com/cubiccadence/client/auth/AuthManagerTest.java`
+  - `src/test/java/com/cubiccadence/client/library/MusicLibraryManagerTest.java`（新增）
+  - `src/test/java/com/cubiccadence/client/provider/netease/NeteaseApiClientTest.java`（新增）
+  - `docs/design.md`
+  - `CHANGELOG.md`
+- **变更内容**：
+  - `UserProfile` 新增等级和会员枚举；`vipType` 按 `0/10/11` 映射为非会员/音乐包/黑胶 VIP，未知值安全降级为非会员；
+  - `MusicProvider` 的资料和歌单查询显式接收 `AuthSession`，Provider 不保存 Cookie；新增 `PlaylistSummaryPage` 分页契约；
+  - `NeteaseApiClient` 实现 `/user/account` 与 `/user/playlist` 异步 GET、响应大小和 JSON 结构校验、资料/歌单领域映射；歌单按 `limit=8`、`offset=page*8` 请求，Cookie 和完整请求地址均不写日志；
+  - `MusicLibraryManager` 在 `SIGNED_IN` 后加载资料和第一页歌单，支持上一页、下一页与失败重试；用请求代次隔离退出登录后的迟到响应，资料或图片失败不会改变认证状态；
+  - `RemoteTextureCache` 直接使用接口返回的头像/封面 URL，由 Mod 客户端后台下载、渲染线程注册 `DynamicTexture`；仅允许网易云图片域 HTTPS，限制 4 MiB、4096 边长和 16777216 像素，翻页、关闭、退出时释放纹理；
+  - `MusicLibraryScreen` 改为左上账号横条、中部 4×2 自适应大封面与内嵌分页、底部播放控制；保留播放/暂停、停止、格式切换、进度、方律音量、原版音乐音量及禁用原版背景音乐；补充加载、空数据、失败和占位状态；
+  - 新增资料/VIP/歌单映射测试及登录恢复、每页 8 项、退出后迟到响应隔离测试；同步中英文语言与设计文档。
+- **风险**：`api-enhanced` 为第三方逆向服务，字段或接口可能变更；头像和封面依赖网易云 CDN HTTPS 可用性，失败时仅显示占位；不同 GUI 缩放下的封面大小、长昵称/UID、真实扫码资料、翻页图片释放和退出清理仍需运行游戏实例人工确认。
+- **验证**：`compileJava/compileClientJava/compileTestJava/test` 全部通过；中英文语言 JSON 解析通过；`git diff --check` 无空白错误。JDK 25 运行 JNA 测试时仍输出既有 native-access 未来兼容性警告，不影响本次构建成功。
+
 ## 2026-08-20 00:37:42 - 修复问题（暂停失效、二维码返回主页入口与退出二次确认）
 
 - **变更概述**：修复本地音乐暂停后返回游戏仍继续播放的问题；为二维码登录页新增「返回主页」按钮；退出登录增加二次确认。

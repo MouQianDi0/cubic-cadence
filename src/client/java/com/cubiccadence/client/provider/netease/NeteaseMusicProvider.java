@@ -4,16 +4,15 @@ import com.cubiccadence.auth.AuthSession;
 import com.cubiccadence.auth.AuthorizationChallenge;
 import com.cubiccadence.auth.AuthorizationResult;
 import com.cubiccadence.model.PlaybackSource;
-import com.cubiccadence.model.PlaylistSummary;
 import com.cubiccadence.model.UserProfile;
 import com.cubiccadence.provider.AudioQuality;
 import com.cubiccadence.provider.MusicProvider;
 import com.cubiccadence.provider.PageRequest;
 import com.cubiccadence.provider.PlaylistPage;
+import com.cubiccadence.provider.PlaylistSummaryPage;
 import com.cubiccadence.provider.SearchPage;
 import com.cubiccadence.provider.SearchType;
 
-import java.util.List;
 import java.net.URI;
 import java.util.concurrent.CompletableFuture;
 
@@ -24,7 +23,7 @@ public class NeteaseMusicProvider implements MusicProvider {
     private final NeteaseAuthClient authClient;
 
     public NeteaseMusicProvider(URI apiEnhancedBaseUri) {
-        this.apiClient = new NeteaseApiClient();
+        this.apiClient = new NeteaseApiClient(apiEnhancedBaseUri);
         this.authClient = new NeteaseAuthClient(apiEnhancedBaseUri);
     }
 
@@ -49,15 +48,17 @@ public class NeteaseMusicProvider implements MusicProvider {
     }
 
     @Override
-    public CompletableFuture<UserProfile> getCurrentUser() {
-        // TODO: implement NCM-USER-001
-        return unsupported();
+    public CompletableFuture<UserProfile> getCurrentUser(AuthSession session) {
+        return apiClient.getCurrentUser(session);
     }
 
     @Override
-    public CompletableFuture<List<PlaylistSummary>> getUserPlaylists() {
-        // TODO: implement NCM-LIB-001 / NCM-LIB-002
-        return unsupported();
+    public CompletableFuture<PlaylistSummaryPage> getUserPlaylists(
+            AuthSession session,
+            String userId,
+            PageRequest pageRequest
+    ) {
+        return apiClient.getUserPlaylists(session, userId, pageRequest);
     }
 
     @Override

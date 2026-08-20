@@ -6,12 +6,12 @@ import com.cubiccadence.auth.AuthorizationChallenge;
 import com.cubiccadence.auth.AuthorizationResult;
 import com.cubiccadence.auth.AuthorizationStatus;
 import com.cubiccadence.model.PlaybackSource;
-import com.cubiccadence.model.PlaylistSummary;
 import com.cubiccadence.model.UserProfile;
 import com.cubiccadence.provider.AudioQuality;
 import com.cubiccadence.provider.MusicProvider;
 import com.cubiccadence.provider.PageRequest;
 import com.cubiccadence.provider.PlaylistPage;
+import com.cubiccadence.provider.PlaylistSummaryPage;
 import com.cubiccadence.provider.SearchPage;
 import com.cubiccadence.provider.SearchType;
 import org.junit.jupiter.api.Test;
@@ -19,7 +19,6 @@ import org.junit.jupiter.api.Test;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
-import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
@@ -165,12 +164,16 @@ class AuthManagerTest {
         }
 
         @Override
-        public CompletableFuture<UserProfile> getCurrentUser() {
+        public CompletableFuture<UserProfile> getCurrentUser(AuthSession session) {
             return unsupported();
         }
 
         @Override
-        public CompletableFuture<List<PlaylistSummary>> getUserPlaylists() {
+        public CompletableFuture<PlaylistSummaryPage> getUserPlaylists(
+                AuthSession session,
+                String userId,
+                PageRequest pageRequest
+        ) {
             return unsupported();
         }
 
