@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-08-20 17:45:42 - 修复问题（本机与 GitHub 跨平台选择 Gradle JDK 25）
+
+- **变更概述**：修正仅删除本机 JDK 路径会导致 `JAVA_HOME` 为 JDK 17 的本机终端无法构建的问题，改用 Gradle 9.7 Daemon JVM Criteria 跨平台声明 Java 25 要求。
+- **修改文件**：
+  - `gradle.properties`
+  - `gradle/gradle-daemon-jvm.properties`（新增）
+  - `CHANGELOG.md`
+- **变更内容**：
+  - 保持 `gradle.properties` 不包含 `C:/Program Files/...` 等机器专属 `org.gradle.java.home`，并注明 Daemon JDK 由独立条件文件选择；
+  - 新增 `gradle/gradle-daemon-jvm.properties`，以 `toolchainVersion=25` 要求任意厂商的 JDK 25；本机会自动发现已安装的 Temurin/Oracle JDK 25，GitHub Actions 会使用 `actions/setup-java` 提供的 Microsoft JDK 25；
+  - 不更改系统级 `JAVA_HOME`，避免影响仍需 JDK 17 的其他项目。
+- **风险**：没有安装 JDK 25 且未配置 JDK 自动供应源的其他机器会明确构建失败；当前本机已检测到两个 JDK 25，GitHub 工作流也已安装 JDK 25，因此当前环境不受影响。
+- **验证结果**：保持本机 `JAVA_HOME` 为 Eclipse Temurin JDK 17，直接执行 `.\gradlew.bat --version` 显示 Launcher JVM 17、Daemon JVM 来自 `gradle/gradle-daemon-jvm.properties` 且兼容 Java 25；随后执行 `.\gradlew.bat build --no-daemon` 成功（`BUILD SUCCESSFUL`，9 个任务中 2 个执行、7 个为最新状态）。
+
 ## 2026-08-20 17:28:28 - 修复问题（在线播放提前切歌与自动切歌卡顿）
 
 - **变更概述**：修复在线音乐在结尾前几十秒被误判结束并自动跳到下一首，以及切歌时客户端渲染线程同步关闭网络/解码资源导致游戏短时卡死的问题。
