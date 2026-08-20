@@ -101,19 +101,19 @@ IDE 的配置与运行方式请参考 [Fabric 官方文档](https://docs.fabricm
 
 ### 音乐库主页
 
-![音乐库主页](docs\screenshots\music-library.jpg)
+![音乐库主页](docs/screenshots/music-library.jpg)
 
 ### 扫码登录
 
-![扫码登录](docs\screenshots\login-qr.jpg)
+![扫码登录](docs/screenshots/login-qr.jpg)
 
 ### 歌单详情
 
-![歌单详情](docs\screenshots\playlist-detail.png)
+![歌单详情](docs/screenshots/playlist-detail.png)
 
 ### 设置界面
 
-![设置界面](docs\screenshots\settings.png)
+![设置界面](docs/screenshots/settings.png)
 
 ## 目录结构
 
