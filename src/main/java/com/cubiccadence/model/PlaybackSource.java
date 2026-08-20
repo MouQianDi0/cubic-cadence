@@ -11,6 +11,20 @@ public record PlaybackSource(
         long expiresAtEpochMs,
         Map<String, String> requestHeaders,
         AudioQuality quality,
-        Integer bitrate
+        Integer bitrate,
+        PlaybackAccess access,
+        long playableDurationMs
 ) {
+    public PlaybackSource {
+        if (uri == null || uri.getScheme() == null) {
+            throw new IllegalArgumentException("playback source URI must be absolute");
+        }
+        contentType = contentType == null ? "" : contentType.trim();
+        requestHeaders = requestHeaders == null ? Map.of() : Map.copyOf(requestHeaders);
+        if (quality == null) {
+            throw new IllegalArgumentException("playback quality is required");
+        }
+        access = access == null ? PlaybackAccess.FULL : access;
+        playableDurationMs = Math.max(0L, playableDurationMs);
+    }
 }

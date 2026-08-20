@@ -1,27 +1,32 @@
 package com.cubiccadence.provider;
 
 import com.cubiccadence.auth.AuthSession;
+import com.cubiccadence.auth.AuthorizationChallenge;
+import com.cubiccadence.auth.AuthorizationResult;
 import com.cubiccadence.model.PlaybackSource;
-import com.cubiccadence.model.PlaylistSummary;
 import com.cubiccadence.model.UserProfile;
 
-import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public interface MusicProvider {
     String id();
 
-    CompletableFuture<AuthSession> beginLogin();
+    CompletableFuture<AuthorizationChallenge> beginLogin();
 
-    CompletableFuture<AuthSession> pollAuthorization(String authorizationId);
+    CompletableFuture<AuthorizationResult> pollAuthorization(String authorizationId);
 
     CompletableFuture<AuthSession> refresh(AuthSession session);
 
-    CompletableFuture<UserProfile> getCurrentUser();
+    CompletableFuture<UserProfile> getCurrentUser(AuthSession session);
 
-    CompletableFuture<List<PlaylistSummary>> getUserPlaylists();
+    CompletableFuture<PlaylistSummaryPage> getUserPlaylists(
+            AuthSession session,
+            String userId,
+            PageRequest pageRequest
+    );
 
     CompletableFuture<PlaylistPage> getPlaylistTracks(
+            AuthSession session,
             String playlistId,
             PageRequest pageRequest
     );
@@ -33,9 +38,10 @@ public interface MusicProvider {
     );
 
     CompletableFuture<PlaybackSource> resolvePlaybackSource(
+            AuthSession session,
             String trackId,
             AudioQuality quality
     );
 
-    CompletableFuture<Void> logout();
+    CompletableFuture<Void> logout(AuthSession session);
 }

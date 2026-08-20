@@ -29,6 +29,9 @@ dependencies {
 
 	// Fabric API. This is technically optional, but you probably want it anyway.
 	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+	// Windows DPAPI bridge used to protect the gateway session at rest.
+	implementation "net.java.dev.jna:jna-platform:5.17.0"
+	include "net.java.dev.jna:jna-platform:5.17.0"
 
 	// MP3 audio decoder (JavaSound SPI). These are bundled into the mod jar so
 	// local MP3 files decode to PCM without any native dependency.
@@ -37,6 +40,20 @@ dependencies {
 	implementation "com.googlecode.soundlibs:tritonus-share:0.3.7.4"
 	include "com.tianscar.javasound:javasound-mp3:1.9.8"
 	include "com.googlecode.soundlibs:tritonus-share:0.3.7.4"
+
+	// QR code encoding for the in-game NetEase login screen (Apache 2.0).
+	implementation "com.google.zxing:core:3.5.3"
+	include "com.google.zxing:core:3.5.3"
+
+	testImplementation "org.junit.jupiter:junit-jupiter:6.1.2"
+	testRuntimeOnly "org.junit.platform:junit-platform-launcher"
+}
+
+sourceSets.test.compileClasspath += sourceSets.client.output
+sourceSets.test.runtimeClasspath += sourceSets.client.output
+
+tasks.withType(Test).configureEach {
+	useJUnitPlatform()
 }
 
 processResources {

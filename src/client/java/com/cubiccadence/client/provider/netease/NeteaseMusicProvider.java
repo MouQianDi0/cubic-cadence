@@ -1,17 +1,19 @@
 package com.cubiccadence.client.provider.netease;
 
 import com.cubiccadence.auth.AuthSession;
+import com.cubiccadence.auth.AuthorizationChallenge;
+import com.cubiccadence.auth.AuthorizationResult;
 import com.cubiccadence.model.PlaybackSource;
-import com.cubiccadence.model.PlaylistSummary;
 import com.cubiccadence.model.UserProfile;
 import com.cubiccadence.provider.AudioQuality;
 import com.cubiccadence.provider.MusicProvider;
 import com.cubiccadence.provider.PageRequest;
 import com.cubiccadence.provider.PlaylistPage;
+import com.cubiccadence.provider.PlaylistSummaryPage;
 import com.cubiccadence.provider.SearchPage;
 import com.cubiccadence.provider.SearchType;
 
-import java.util.List;
+import java.net.URI;
 import java.util.concurrent.CompletableFuture;
 
 public class NeteaseMusicProvider implements MusicProvider {
@@ -20,9 +22,9 @@ public class NeteaseMusicProvider implements MusicProvider {
     private final NeteaseApiClient apiClient;
     private final NeteaseAuthClient authClient;
 
-    public NeteaseMusicProvider() {
-        this.apiClient = new NeteaseApiClient();
-        this.authClient = new NeteaseAuthClient();
+    public NeteaseMusicProvider(URI apiEnhancedBaseUri) {
+        this.apiClient = new NeteaseApiClient(apiEnhancedBaseUri);
+        this.authClient = new NeteaseAuthClient(apiEnhancedBaseUri);
     }
 
     @Override
@@ -31,39 +33,41 @@ public class NeteaseMusicProvider implements MusicProvider {
     }
 
     @Override
-    public CompletableFuture<AuthSession> beginLogin() {
-        // TODO: implement NCM-AUTH-001 / NCM-AUTH-002
-        return unsupported();
+    public CompletableFuture<AuthorizationChallenge> beginLogin() {
+        return authClient.beginLogin();
     }
 
     @Override
-    public CompletableFuture<AuthSession> pollAuthorization(String authorizationId) {
-        // TODO: poll the provider authorization result
-        return unsupported();
+    public CompletableFuture<AuthorizationResult> pollAuthorization(String authorizationId) {
+        return authClient.pollAuthorization(authorizationId);
     }
 
     @Override
     public CompletableFuture<AuthSession> refresh(AuthSession session) {
-        // TODO: implement NCM-AUTH-003
-        return unsupported();
+        return authClient.refresh(session);
     }
 
     @Override
-    public CompletableFuture<UserProfile> getCurrentUser() {
-        // TODO: implement NCM-USER-001
-        return unsupported();
+    public CompletableFuture<UserProfile> getCurrentUser(AuthSession session) {
+        return apiClient.getCurrentUser(session);
     }
 
     @Override
-    public CompletableFuture<List<PlaylistSummary>> getUserPlaylists() {
-        // TODO: implement NCM-LIB-001 / NCM-LIB-002
-        return unsupported();
+    public CompletableFuture<PlaylistSummaryPage> getUserPlaylists(
+            AuthSession session,
+            String userId,
+            PageRequest pageRequest
+    ) {
+        return apiClient.getUserPlaylists(session, userId, pageRequest);
     }
 
     @Override
-    public CompletableFuture<PlaylistPage> getPlaylistTracks(String playlistId, PageRequest pageRequest) {
-        // TODO: implement NCM-LIB-003 / NCM-LIB-004 / NCM-TRACK-001
-        return unsupported();
+    public CompletableFuture<PlaylistPage> getPlaylistTracks(
+            AuthSession session,
+            String playlistId,
+            PageRequest pageRequest
+    ) {
+        return apiClient.getPlaylistTracks(session, playlistId, pageRequest);
     }
 
     @Override
@@ -73,15 +77,17 @@ public class NeteaseMusicProvider implements MusicProvider {
     }
 
     @Override
-    public CompletableFuture<PlaybackSource> resolvePlaybackSource(String trackId, AudioQuality quality) {
-        // TODO: implement NCM-PLAY-001 / NCM-PLAY-002
-        return unsupported();
+    public CompletableFuture<PlaybackSource> resolvePlaybackSource(
+            AuthSession session,
+            String trackId,
+            AudioQuality quality
+    ) {
+        return apiClient.resolvePlaybackSource(session, trackId, quality);
     }
 
     @Override
-    public CompletableFuture<Void> logout() {
-        // TODO: implement NCM-AUTH-005
-        return unsupported();
+    public CompletableFuture<Void> logout(AuthSession session) {
+        return authClient.logout(session);
     }
 
     private static <T> CompletableFuture<T> unsupported() {

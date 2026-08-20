@@ -208,13 +208,10 @@ src/client/java/com/cubiccadence/client/
 
 | 凭证 | 归属 | 存放位置 |
 | --- | --- | --- |
-| App ID | Mod 应用 | 按平台规则确定 |
-| Private Key | Mod 开发者 | 后端或本机安全开发环境，不进入 JAR |
-| Access Token | 玩家 | 安全存储，禁止日志输出 |
-| Refresh Token | 玩家 | 安全存储，禁止日志输出 |
+| 网易云 Cookie | 玩家 | DPAPI 加密存储，禁止日志输出 |
 | 临时播放地址 | 播放期间 | 仅内存短期使用，不持久化 |
 
-第一阶段 `SecureTokenStore` 只定义接口，具体实现使用操作系统安全凭据存储或最小权限的本地文件；日志统一脱敏，禁止输出 Token、Private Key 与完整播放地址。
+阶段 3 在 Windows 首期范围内使用 DPAPI 加密网易云 Cookie 会话，文件为 `config/cubic-cadence/auth-session.dpapi`。Mod 直连自建的 `api-enhanced` 服务，不再持有开发者 Private Key；日志统一脱敏，禁止输出 Cookie 与完整播放地址。
 
 ## 8. 错误处理与状态机
 
@@ -255,7 +252,9 @@ public record UserProfile(
         String providerId,
         String userId,
         String displayName,
-        String avatarUrl
+        String avatarUrl,
+        int level,
+        MembershipTier membershipTier
 ) {}
 
 // Artist.java
@@ -333,6 +332,13 @@ public enum PlaylistOwnership {
     SPECIAL
 }
 
+public enum MembershipTier {
+    UNKNOWN,
+    NON_MEMBER,
+    MUSIC_PACKAGE,
+    BLACK_VINYL_VIP
+}
+
 // MusicErrorCode.java
 public enum MusicErrorCode {
     NETWORK_UNAVAILABLE,
@@ -388,6 +394,12 @@ public record PlaylistPage(
         String nextCursor
 ) {}
 
+public record PlaylistSummaryPage(
+        List<PlaylistSummary> items,
+        boolean hasNext,
+        Integer total
+) {}
+
 // MusicProvider.java
 public interface MusicProvider {
     String id();
@@ -398,11 +410,16 @@ public interface MusicProvider {
 
     CompletableFuture<AuthSession> refresh(AuthSession session);
 
-    CompletableFuture<UserProfile> getCurrentUser();
+    CompletableFuture<UserProfile> getCurrentUser(AuthSession session);
 
-    CompletableFuture<List<PlaylistSummary>> getUserPlaylists();
+    CompletableFuture<PlaylistSummaryPage> getUserPlaylists(
+            AuthSession session,
+            String userId,
+            PageRequest pageRequest
+    );
 
     CompletableFuture<PlaylistPage> getPlaylistTracks(
+            AuthSession session,
             String playlistId,
             PageRequest pageRequest
     );
@@ -536,7 +553,7 @@ public class AuthManager {
 }
 ```
 
-第一阶段 `AuthManager` 只维护状态机与占位实现，不发起真实授权请求。
+阶段 3 的 `AuthManager` 已实现授权挑战、后台轮询、会话恢复、到期前单次刷新、退出清理和错误状态。由于网易云官方对个人开发者不支持多用户 API，项目已决策改用第三方逆向库 `NeteaseCloudMusicApiEnhanced/api-enhanced` 作为数据来源：客户端直连自建服务，会话改为 Cookie 模型，原 Spring Boot 后端已废弃删除；该方案非官方授权，存在合规与随时失效风险。
 
 ### 9.7 网易云 Provider（`src/client/java/com/cubiccadence/client/provider/netease/`）
 
@@ -667,6 +684,8 @@ public class CoverCache {
 }
 ```
 
+当前歌曲详情的运行时状态由 `client/library/PlaylistDetailManager` 管理。它不参与启动同步；只有用户点击歌单后才从 `AuthManager` 读取当前会话并调用 `MusicProvider.getPlaylistTracks(session, playlistId, pageRequest)`。每页请求 50 首，当前页只保存在内存中，切换歌单、退出登录或关闭客户端时通过请求代次丢弃迟到响应。
+
 ### 9.10 UI（`src/client/java/com/cubiccadence/client/ui/screen/`）
 
 ```java
@@ -686,9 +705,33 @@ public class MusicLibraryScreen extends Screen {
     @Override
     public void close();
 }
+
+// MusicSettingsScreen.java
+public final class MusicSettingsScreen extends Screen {
+    public MusicSettingsScreen(Screen parent);
+}
+
+// PlaylistDetailScreen.java
+public final class PlaylistDetailScreen extends Screen {
+    public PlaylistDetailScreen(Screen parent, PlaylistSummary playlist);
+}
 ```
 
-第一阶段 `MusicLibraryScreen` 为可打开/关闭的空界面，使用第 5 节列出的原版素材渲染背景与标题，不包含真实歌单数据。
+当前 `MusicLibraryScreen` 在登录后展示账号头像、昵称、完整用户标识、等级和会员状态；中部为居中的 4 列 × 2 行用户歌单大封面网格，封面最大逻辑尺寸为 176×176，通过紧贴网格下方的「上一页 / 下一页」在已同步摘要中按每页 8 项本地分页。界面提供手动刷新、首次同步计数、后台刷新提示和上次同步时间，并以「我创建的歌单 / 我收藏的歌单 / 红心歌曲」标识来源。主页右下角齿轮打开 `MusicSettingsScreen`，方律音量、原版音乐音量和禁用原版背景音乐均集中在设置页。
+
+`NeteaseApiClient` 以 `/user/account` 的身份资料为基础，通过认证会话调用 `/user/level` 与 `/vip/info` 补充等级和会员；明确无权益时显示非会员，补充接口不可用时显示未知而不回退登录状态。`MusicLibraryManager` 启动时先由 `LibraryCacheStore` 异步读取 `config/cubic-cadence/cache/library.json`，立即展示公开账号资料和全部歌单摘要，再在后台以每批最多 50 项请求 `/user/playlist` 直至完成；刷新失败保留可用缓存，显式退出删除资料库与封面缓存。缓存不含 Cookie、完整播放地址和歌曲明细，歌单歌曲仍留待点击歌单后按需加载。
+
+`RemoteTextureCache` 在客户端后台下载网易云图片，只在渲染线程注册/释放动态纹理；网络响应优先通过 Java `ImageIO` 解码为 `BufferedImage`，再转换为 Minecraft `NativeImage`，绕开当前环境中部分合法 PNG 直接解码失败的问题。成功响应写入有数量上限的磁盘缓存，后续页面与启动可复用；网络错误采用有限重试，格式、尺寸和解码等确定性错误不做无效重试，日志仅保留主机、阶段和异常类型，图片失败仍只降级占位而不改变登录状态。
+
+点击主页歌单卡片后进入 `PlaylistDetailScreen`。详情页使用原版 `ObjectSelectionList` 按需展示当前 50 首歌曲的封面、名称、歌手、专辑、时长和权限状态，并通过上一页/下一页继续请求。`NeteaseApiClient` 调用 `/playlist/track/all`，将 `songs` 与 `privileges` 按歌曲 ID 合并；地区提示优先映射为 `REGION_RESTRICTED`，灰色版权歌曲映射为 `COPYRIGHT_RESTRICTED`，当前账号无会员权益映射为 `MEMBERSHIP_REQUIRED`，无法可靠判断时保持 `UNKNOWN`。
+
+点击可尝试播放的歌曲后，`PlayerController` 读取 `AuthManager` 当前会话，通过无状态 `MusicProvider.resolvePlaybackSource(session, trackId, quality)` 调用 api-enhanced `/song/url/v1`。低、标准和高音质分别请求 `standard`、`higher`、`exhigh`；不发送 `unblock`，不调用灰色歌曲或版权绕过接口。返回的临时地址只保存在内存中，Cookie 与完整媒体地址不写日志；`freeTrialInfo` 存在时记录为 `PlaybackAccess.TRIAL` 并在界面明确标注试听。
+
+在线 MP3 使用 `JavaSoundStreamingAudioStream` 在专用后台线程执行 HTTP 读取和 JavaSound 解码，最多缓存 16 个 64 KiB PCM 块。Minecraft 原版声音线程通过自带 `AudioStream` 从有界队列消费 PCM，并继续使用游戏已有 OpenAL 设备和声道；停止、切歌、自然结束、退出登录和关闭客户端都会关闭网络流。`PlaybackQueue` 以当前详情页已加载歌曲作为队列，支持顺序、单曲循环、列表循环和带历史的随机播放，并跳过明确受版权、会员、地区或音质限制的歌曲。当前阶段不支持 FLAC 无损解码及在线任意位置 seek，且不会静默降低用户选择的无损音质。
+
+流式读取明确区分 `RUNNING / EOF / FAILED / CANCELLED`：短时网络断流只向 OpenAL 提供当前所需的静音保活缓冲并进入 `BUFFERING`，数据恢复后继续播放；连续断流超过 10 秒、解码失败或实际 PCM 时长比播放源声明时长短超过容差时进入 `FAILED`，不得作为自然结束自动切歌。PCM 队列硬上限为 1 MiB，OpenAL 仍仅保留原版四段流缓冲，静音数据不另行积压。停止与切歌只在调用线程设置取消标记、清空队列和中断生产任务，JavaSound 与 HTTP 流由最多两个专用清理线程关闭，禁止在客户端渲染 tick 同步等待网络资源释放。
+
+Minecraft 声道通过一段静音静态缓冲取得游戏管理的 OpenAL Source。切换到在线流时必须在声音线程依次停止 Source、将 `AL_BUFFER` 设为 0、释放静音引导缓冲、挂载 `AudioStream` 队列并重新播放；OpenAL 不允许静态 `AL_BUFFER` 与 `AL_BUFFERS_QUEUED` 同时存在。挂载后以 `AL_BUFFERS_QUEUED > 0` 作为成功条件，失败时关闭流并进入 `ERROR`，不得由声音 tick 无限重复补充无效缓冲。
 
 ## 10. 与网易云接口的映射
 
@@ -704,14 +747,14 @@ public class MusicLibraryScreen extends Screen {
 | `MusicProvider.search()` | NCM-SEARCH-001 至 NCM-SEARCH-003 |
 | `MusicProvider.resolvePlaybackSource()` | NCM-PLAY-001、NCM-PLAY-002 |
 
-正式编码接入网易云前，必须完成接口需求文档第 15 节的官方逐项核实。
+网易云多用户 API 已因个人开发者限制而放弃官方接入，改走 `NeteaseCloudMusicApiEnhanced/api-enhanced` 逆向库；编码时以该库实际接口为准，并保留本段所述合规风险提示。
 
 ## 11. 后续阶段路线
 
 1. 阶段 0：开放平台能力验证（授权方式、Scope、播放权益与播放源）。
 2. 阶段 1：本骨架落地并验收「可启动、可打开/关闭界面」。
 3. 阶段 2：本地音频播放验证（OpenAL 与解码库）。
-4. 阶段 3：网易云登录与令牌生命周期。
+4. 阶段 3：网易云登录与令牌生命周期（客户端直连 `api-enhanced` 服务，会话改为 Cookie 模型）。
 5. 阶段 4：歌单同步与音乐库。
 6. 阶段 5：在线歌曲播放。
 7. 阶段 6：稳定性与发布准备。

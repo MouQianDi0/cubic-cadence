@@ -9,4 +9,7 @@ public record PlaylistPage(
         boolean hasNext,
         String nextCursor
 ) {
+    public PlaylistPage {
+        tracks = List.copyOf(tracks);
+    }
 }
