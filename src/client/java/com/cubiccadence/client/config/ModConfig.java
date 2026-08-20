@@ -27,7 +27,7 @@ public class ModConfig {
     private boolean hudEnabled = true;
     private AudioQuality audioQuality = AudioQuality.STANDARD;
     private int lastTestTrackIndex;
-    private String apiEnhancedBaseUrl = "";
+    private String apiEnhancedBaseUrl = "https://cub.cubiccadence.top/";
 
     private ModConfig() {
     }

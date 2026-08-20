@@ -65,6 +65,60 @@ class MusicLibraryManagerTest {
     }
 
     @Test
+    void syncsManyPagesUsingReportedTotalConcurrently() throws Exception {
+        FakeProvider provider = new FakeProvider();
+        int total = 250;
+        int pageSize = 50;
+        int totalPages = 5;
+        provider.playlistResponder = request -> {
+            int start = request.page() * pageSize;
+            int count = Math.min(pageSize, total - start);
+            boolean hasNext = request.page() < totalPages - 1;
+            return CompletableFuture.completedFuture(
+                    new PlaylistSummaryPage(playlists(start, count), hasNext, total));
+        };
+
+        try (AuthManager authManager = new AuthManager(provider, validStore());
+             MusicLibraryManager libraryManager = manager(provider, authManager)) {
+            authManager.restoreSession().join();
+            libraryManager.tick();
+            await(() -> libraryManager.getLoadState() == MusicLibraryManager.LoadState.READY);
+
+            assertEquals(5, provider.pageRequests.size());
+            assertEquals(250, libraryManager.getPlaylistPage().orElseThrow().total());
+            libraryManager.loadPage(0);
+            assertEquals("0", libraryManager.getPlaylistPage().orElseThrow().items().getFirst().playlistId());
+            libraryManager.loadPage(31);
+            assertEquals("249", libraryManager.getPlaylistPage().orElseThrow().items().getLast().playlistId());
+        }
+    }
+
+    @Test
+    void fallsBackToSequentialSlidingWindowWhenTotalMissing() throws Exception {
+        FakeProvider provider = new FakeProvider();
+        provider.playlistResponder = request -> {
+            if (request.page() == 0) {
+                return CompletableFuture.completedFuture(new PlaylistSummaryPage(playlists(0, 50), true, null));
+            }
+            if (request.page() == 1) {
+                return CompletableFuture.completedFuture(new PlaylistSummaryPage(playlists(50, 12), false, null));
+            }
+            return CompletableFuture.completedFuture(new PlaylistSummaryPage(List.of(), false, null));
+        };
+
+        try (AuthManager authManager = new AuthManager(provider, validStore());
+             MusicLibraryManager libraryManager = manager(provider, authManager)) {
+            authManager.restoreSession().join();
+            libraryManager.tick();
+            await(() -> libraryManager.getLoadState() == MusicLibraryManager.LoadState.READY);
+
+            assertEquals(2, provider.pageRequests.size());
+            libraryManager.loadPage(7);
+            assertEquals(6, libraryManager.getPlaylistPage().orElseThrow().items().size());
+        }
+    }
+
+    @Test
     void displaysCacheBeforeBackgroundRefreshCompletes() throws Exception {
         FakeProvider provider = new FakeProvider();
         provider.profileFuture = new CompletableFuture<>();

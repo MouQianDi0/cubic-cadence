@@ -1,5 +1,95 @@
 # Changelog
 
+## 2026-08-20 22:35:31 - 优化代码（歌单同步改为有界并发翻页）
+
+- **变更概述**：将登录后歌单列表的同步从「串行逐页翻页」改为「首屏串行 + 剩余页有界并发」，在 `playlistCount` 总数已知时最多同时拉取 4 页，显著降低歌单较多时的首次加载等待。
+- **修改文件**：
+  - `src/client/java/com/cubiccadence/client/library/MusicLibraryManager.java`
+  - `src/test/java/com/cubiccadence/client/library/MusicLibraryManagerTest.java`
+  - `CHANGELOG.md`
+- **变更内容**：
+  - 新增固定 4 线程的守护线程池 `pageExecutor`（`MAX_CONCURRENT_PAGES = 4`），并在 `close()` 中关闭；
+  - 重写 `fetchAllPlaylists`：先串行请求第 0 页拿到 `playlistCount` 总数，若总数已知则按页数一次性并发拉取剩余页（页 1 到 `totalPages - 1`），完成后按页号顺序合并；
+  - 保留 `MAX_SYNC_PAGES` 安全上限与 fail-fast 语义：任一页失败整体刷新失败，退出登录/切账号时通过 `requestGeneration` 丢弃迟到响应；
+  - 当 `playlistCount` 缺失（`total == null`）时退回原有的串行滑动窗口（靠 `more` 字段推进），最坏情况行为与改造前一致；
+  - 并发阶段用 `AtomicInteger` 累加 `syncLoadedCount`，合并完成后统一校正，避免多线程读改写竞态；
+  - 新增两个单元测试：`syncsManyPagesUsingReportedTotalConcurrently`（总数已知的 5 页并发合并与顺序校验）、`fallsBackToSequentialSlidingWindowWhenTotalMissing`（总数缺失的串行兜底）。
+- **风险**：仅在客户端歌单元数据同步路径引入并发，不改动接口契约、缓存格式或 UI 语义；并发页数由后端返回的 `playlistCount` 决定，若该值异常偏小可能少拉少量歌单，但原逻辑同样依赖该值，属既有边界。
+- **验证结果**：`.\gradlew.bat test --no-daemon` 构建成功，`MusicLibraryManagerTest` 7 个用例全部通过（含 2 个新增用例），无其他回归。
+
+## 2026-08-20 19:34:55 - 新增功能（Cubic Cadence Mod 图标）
+
+- **变更概述**：将原有纯文字占位图替换为原创的像素风 Mod 图标，以青色立体方块和金色音符共同表达“Cubic Cadence（方律）”的方块音乐主题。
+- **修改文件**：
+  - `src/main/resources/assets/cubic-cadence/icon.png`
+  - `CHANGELOG.md`
+- **变更内容**：
+  - 使用内置图像生成能力创建原创图标，不包含文字、网易云音乐标志、Minecraft 官方方块或其他第三方品牌元素；
+  - 将生成原稿高质量缩放为 128×128 的 32 位 ARGB PNG，并保留透明背景；
+  - 保持 `fabric.mod.json` 中既有的 `assets/cubic-cadence/icon.png` 资源引用不变。
+- **风险**：仅替换静态图片资源，不改变代码、配置或运行逻辑；主要风险为小尺寸辨识度和透明边缘显示，已通过 128×128 与 32×32 预览检查控制。
+- **验证结果**：已确认正式文件为 128×128、`Format32bppArgb` 且四角透明；`.\gradlew.bat processResources --no-daemon` 执行成功，构建输出与源图标的 SHA-256 完全一致。
+
+## 2026-08-20 19:09:44 - 优化代码（后端代理切换为服务器地址）
+
+- **变更概述**：将模组内置的后端代理地址从空值（文档示例为本地 `http://localhost:3000`）切换为作者部署的 Cloudflare 服务器地址 `https://api.cubiccadence.top/`，实现玩家开箱即用。
+- **修改文件**：
+  - `src/client/java/com/cubiccadence/client/config/ModConfig.java`
+  - `README.md`
+  - `README.en.md`
+  - `CHANGELOG.md`
+- **变更内容**：
+  - `ModConfig` 中 `apiEnhancedBaseUrl` 默认值由 `""` 改为 `https://api.cubiccadence.top/`，全新安装（无 `config/cubic-cadence.json`）默认直连服务器；
+  - 中文 `README.md` 与英文 `README.en.md` 的「特别声明 / Important Notice」章节补充服务器地址，并说明该地址已作为模组内置默认值；
+  - 「配置 / Configuration」章节由单一本地示例改为面向玩家（内置地址、开箱即用）与面向开发者（自托管覆盖）两种情况，分别给出对应 JSON 示例。
+- **风险**：仅常量默认值与文档变更，无接口、构建或资源逻辑改动；已存在且显式配置了 `localhost` 的旧配置文件不会被本次默认值覆盖（属开发者本机配置的预期行为）。
+- **验证结果**：`.\gradlew.bat build --no-daemon` 构建成功（`:compileClientJava` 重新编译、`:test` 通过）；另已通过只读 HTTP 探测确认 `https://api.cubiccadence.top/` 与 `/login/qr/key` 均返回 200。
+
+## 2026-08-20 18:58:19 - 优化代码（README 补充 api-enhanced 后端特别声明）
+
+- **变更概述**：在两个 README 中新增「特别声明 / Important Notice」章节，说明模组通过 `api-enhanced` 后端通信，区分玩家与开发者的使用/部署方式，并贴出第三方库地址。
+- **修改文件**：
+  - `README.md`
+  - `README.en.md`
+  - `CHANGELOG.md`
+- **变更内容**：
+  - 中文版 `README.md` 新增「特别声明」章节：说明后端为 `api-enhanced`，玩家可直接使用（后端已由作者部署在服务器），开发者需自行部署并在 `config/cubic-cadence.json` 配置 `apiEnhancedBaseUrl`，并附第三方库地址 `https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanced`；
+  - 英文版 `README.en.md` 同步新增对应的 `Important Notice` 章节；
+  - 章节置于项目简介之后、功能特性之前，两个语言版本内容一一对应。
+- **风险**：仅文档新增章节，无代码、资源或构建配置变更。
+- **验证结果**：未触发构建；`README.md` 与 `README.en.md` 均为纯 Markdown 文档，无代码回归面。
+
+## 2026-08-20 18:49:51 - 优化代码（README 拆分为中文默认版与英文版两个文件）
+
+- **变更概述**：将单一 README 按语言拆分为两个独立文件，默认入口 `README.md` 使用中文，英文版单独存放在 `README.en.md`，并在两个文件顶部互设语言切换链接。
+- **修改文件**：
+  - `README.md`
+  - `README.en.md`（新增）
+  - `README.zh-CN.md`（删除）
+  - `CHANGELOG.md`
+- **变更内容**：
+  - `README.md` 改为纯中文，作为仓库默认展示入口，顶部提供 `English` 链接指向 `README.en.md`；
+  - 新增 `README.en.md` 纯英文版，内容与中文版一一对应，顶部提供 `简体中文` 链接指向 `README.md`；
+  - 移除此前临时使用的 `README.zh-CN.md`；
+  - 两个版本均保留项目简介、功能特性、技术栈、快速开始、网易云数据源与合规说明、配置、界面预览（截图占位）、目录结构、许可等章节。
+- **风险**：仅文档文件拆分与链接调整，无代码、资源或构建配置变更。
+- **验证结果**：未触发构建；`README.md` 与 `README.en.md` 均为纯 Markdown 文档，无代码回归面。
+
+## 2026-08-20 18:12:54 - 优化代码（重写项目 README 为双语并新增截图占位目录）
+
+- **变更概述**：将原精简 README 重写为中文/英文双语项目介绍，并新增界面截图占位目录，方便后续插入界面素材。
+- **修改文件**：
+  - `README.md`
+  - `docs/screenshots/README.md`（新增）
+  - `CHANGELOG.md`
+- **变更内容**：
+  - `README.md` 改为中文为主、英文并列的双语结构，补充项目简介、功能特性、技术栈与版本基线、快速开始（构建/运行）、网易云数据源与合规说明、配置说明、目录结构、许可等章节；
+  - 新增「界面预览 / Screenshots」章节，预置音乐库主页、扫码登录、歌单详情、设置界面四个插图占位槽，均指向 `docs/screenshots/`；
+  - 新增 `docs/screenshots/README.md`，约定截图文件名、替换方式与推荐分辨率/格式；
+  - 保留原有 Setup、NetEase 数据源、License 说明，未改动任何代码、资源或构建配置。
+- **风险**：仅文档与目录占位变更，无功能影响。
+- **验证结果**：未触发构建；`README.md` 与 `docs/screenshots/README.md` 为纯 Markdown 文档，无代码回归面。
+
 ## 2026-08-20 17:59:31 - 修复问题（播放失败缺少可追踪日志）
 
 - **变更概述**：播放失败时 UI 提示“请查看日志”，但失败路径没有写任何日志，导致无法定位具体原因。为解析播放地址、登录态和权限限制等失败分支补齐结构化日志。

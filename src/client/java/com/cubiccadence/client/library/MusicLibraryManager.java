@@ -15,6 +15,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /** Maintains a cache-first, asynchronously refreshed view of the signed-in user's library. */
@@ -22,10 +25,12 @@ public final class MusicLibraryManager implements AutoCloseable {
     public static final int PAGE_SIZE = 8;
     private static final int SYNC_PAGE_SIZE = 50;
     private static final int MAX_SYNC_PAGES = 200;
+    private static final int MAX_CONCURRENT_PAGES = 4;
 
     private final MusicProvider provider;
     private final AuthManager authManager;
     private final LibraryCacheStore cacheStore;
+    private final ExecutorService pageExecutor;
     private final AtomicLong requestGeneration = new AtomicLong();
 
     private volatile LoadState loadState = LoadState.IDLE;
@@ -47,6 +52,11 @@ public final class MusicLibraryManager implements AutoCloseable {
         this.provider = Objects.requireNonNull(provider, "provider");
         this.authManager = Objects.requireNonNull(authManager, "authManager");
         this.cacheStore = Objects.requireNonNull(cacheStore, "cacheStore");
+        this.pageExecutor = Executors.newFixedThreadPool(MAX_CONCURRENT_PAGES, runnable -> {
+            Thread thread = new Thread(runnable, "cubic-cadence-playlist-sync");
+            thread.setDaemon(true);
+            return thread;
+        });
     }
 
     public void tick() {
@@ -161,6 +171,7 @@ public final class MusicLibraryManager implements AutoCloseable {
         closed = true;
         clear();
         cacheStore.close();
+        pageExecutor.shutdownNow();
     }
 
     private void startCacheFirstSync() {
@@ -202,12 +213,85 @@ public final class MusicLibraryManager implements AutoCloseable {
                     }
                     profile = loadedProfile;
                     loadState = LoadState.SYNCING_PLAYLISTS;
-                    return fetchAllPlaylists(session, loadedProfile.userId(), 0, new ArrayList<>(), request);
+                    return fetchAllPlaylists(session, loadedProfile.userId(), request);
                 })
                 .whenComplete((loadedPlaylists, throwable) -> completeRefresh(request, loadedPlaylists, throwable));
     }
 
     private CompletableFuture<List<PlaylistSummary>> fetchAllPlaylists(
+            AuthSession session,
+            String userId,
+            long request
+    ) {
+        return provider.getUserPlaylists(session, userId, new PageRequest(0, SYNC_PAGE_SIZE))
+                .thenCompose(firstPage -> {
+                    requireCurrent(request);
+                    List<PlaylistSummary> accumulated = new ArrayList<>(firstPage.items());
+                    syncLoadedCount = accumulated.size();
+                    syncTotal = firstPage.total();
+
+                    Integer total = firstPage.total();
+                    if (total != null && total > 0) {
+                        int totalPages = Math.max(1, (total + SYNC_PAGE_SIZE - 1) / SYNC_PAGE_SIZE);
+                        if (totalPages > MAX_SYNC_PAGES) {
+                            return CompletableFuture.failedFuture(
+                                    new IllegalStateException("playlist sync exceeded its safety limit"));
+                        }
+                        if (totalPages <= 1 || !firstPage.hasNext()) {
+                            return CompletableFuture.completedFuture(accumulated);
+                        }
+                        return fetchPagesConcurrently(session, userId, 1, totalPages, accumulated, request);
+                    }
+
+                    // The api-enhanced response omitted playlistCount: fall back to the
+                    // sequential sliding window driven by the "more" flag.
+                    if (!firstPage.hasNext()) {
+                        return CompletableFuture.completedFuture(accumulated);
+                    }
+                    return fetchSequentialFallback(session, userId, 1, accumulated, request);
+                });
+    }
+
+    private CompletableFuture<List<PlaylistSummary>> fetchPagesConcurrently(
+            AuthSession session,
+            String userId,
+            int fromPage,
+            int totalPages,
+            List<PlaylistSummary> accumulated,
+            long request
+    ) {
+        int count = totalPages - fromPage;
+        List<List<PlaylistSummary>> slots = new ArrayList<>(count);
+        for (int index = 0; index < count; index++) {
+            slots.add(null);
+        }
+        AtomicInteger loadedCounter = new AtomicInteger(accumulated.size());
+        CompletableFuture<?>[] tasks = new CompletableFuture<?>[count];
+        for (int page = fromPage; page < totalPages; page++) {
+            int index = page - fromPage;
+            int pageNumber = page;
+            tasks[index] = CompletableFuture
+                    .supplyAsync(
+                            () -> provider.getUserPlaylists(
+                                    session, userId, new PageRequest(pageNumber, SYNC_PAGE_SIZE)).join(),
+                            pageExecutor)
+                    .thenAccept(loadedPage -> {
+                        requireCurrent(request);
+                        slots.set(index, loadedPage.items());
+                        syncLoadedCount = loadedCounter.addAndGet(loadedPage.items().size());
+                    });
+        }
+        return CompletableFuture.allOf(tasks).thenApply(ignored -> {
+            requireCurrent(request);
+            for (int index = 0; index < count; index++) {
+                accumulated.addAll(slots.get(index));
+            }
+            syncLoadedCount = accumulated.size();
+            return accumulated;
+        });
+    }
+
+    private CompletableFuture<List<PlaylistSummary>> fetchSequentialFallback(
             AuthSession session,
             String userId,
             int page,
@@ -226,9 +310,9 @@ public final class MusicLibraryManager implements AutoCloseable {
                     boolean reachedReportedTotal = loadedPage.total() != null
                             && accumulated.size() >= loadedPage.total();
                     if (!loadedPage.hasNext() || loadedPage.items().isEmpty() || reachedReportedTotal) {
-                        return CompletableFuture.completedFuture(List.copyOf(accumulated));
+                        return CompletableFuture.completedFuture(accumulated);
                     }
-                    return fetchAllPlaylists(session, userId, page + 1, accumulated, request);
+                    return fetchSequentialFallback(session, userId, page + 1, accumulated, request);
                 });
     }
 
