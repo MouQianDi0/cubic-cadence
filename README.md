@@ -101,7 +101,6 @@ IDE 的配置与运行方式请参考 [Fabric 官方文档](https://docs.fabricm
 
 ## 界面预览
 
-> 以下为插图占位区域。将你的截图放入 `docs/screenshots/`，并按对应文件名替换即可显示。
 
 ### 音乐库主页
 
