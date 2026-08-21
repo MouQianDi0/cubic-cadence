@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-08-21 16:34:17 - 新增功能（下一首音频与歌词预加载）
+
+- **变更概述**：当前歌曲播放期间，后台提前解析并预打开下一首的在线音频流，同时预取下一首歌词；自然切歌或手动下一首命中预加载时直接复用，减少切歌停顿，实现接近无缝衔接。预加载是纯增强，失败时静默回退到原有实时加载，不改动既有失败、重试、迟到响应语义。
+- **修改文件**：
+  - `src/client/java/com/cubiccadence/client/playback/PlaybackQueue.java`
+  - `src/client/java/com/cubiccadence/client/playback/PlaybackEngine.java`
+  - `src/client/java/com/cubiccadence/client/playback/AudioEngine.java`
+  - `src/client/java/com/cubiccadence/client/playback/PlayerController.java`
+  - `src/client/java/com/cubiccadence/client/lyrics/LyricsManager.java`
+  - `src/client/java/com/cubiccadence/client/CubicCadenceClient.java`
+  - `src/test/java/com/cubiccadence/client/playback/PlayerControllerTest.java`
+  - `src/test/java/com/cubiccadence/client/playback/PlaybackQueueTest.java`
+  - `src/test/java/com/cubiccadence/client/lyrics/LyricsManagerTest.java`
+  - `docs/design.md`、`README.md`、`README.en.md`、`CHANGELOG.md`
+- **变更内容**：
+  - `PlaybackQueue` 新增 `peekNextAfterEnd()`，以非破坏方式返回自然结束后要播放的下一首；洗牌回绕重排无法不消耗随机数预测时返回空，回退惰性加载；
+  - `PlaybackEngine` 接口新增 `preload(source)` / `cancelPreload()`，`AudioEngine` 复用 `JavaSoundStreamingAudioStream.open()` 提前建连、解码并预缓冲下一首流；命中就绪流时 `play` 直接 attach，否则退回实时打开；
+  - `PlayerController` 在进入 `PLAYING` 后通过 `peekNextAfterEnd()` 定位下一首并后台解析 + 预加载；自然结束与手动下一首命中时复用已解析源，跳过重复解析；手动切歌、队列到底、停止、退出登录时清理过期预加载；
+  - `LyricsManager` 新增 `preload(track)`，仅填充缓存不干扰当前歌词；切到该曲时 `tick` 命中缓存直接展示，避免二次请求；
+  - 预加载仅对在线 http/https 流生效；本地音源仍走整曲解码与缓存复用。
+- **风险**：预加载期间额外占用一条 CDN 连接和最多 1 MiB PCM 缓冲（沿用现有上限），并占用流线程池第二线程；预加载尚未完成即切歌会退回实时打开，极端竞态下可能短暂多开一个流，下一轮预加载或清理时自动回收。洗牌回绕那一拍不做预加载。真实连续切歌无停顿仍需游戏内真实账号人工验收。
+- **验证结果**：`.\gradlew.bat build --no-daemon` 构建成功；新增队列 peek、自然结束预加载复用、手动下一首复用、歌词预加载等用例全部通过。
+
 ## 2026-08-21 15:23:38 - 新增功能（同步歌词与可复用正在播放 HUD）
 
 - **变更概述**：新增按播放时间逐行同步的歌词能力，以及平台无关的游戏内正在播放 HUD；HUD 按确认稿在左侧显示封面和歌曲信息，底部同一行左侧高亮当前歌词、右侧弱化下一行，并允许整体关闭或分别选择显示内容。

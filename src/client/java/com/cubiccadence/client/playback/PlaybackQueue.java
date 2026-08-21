@@ -52,6 +52,32 @@ public final class PlaybackQueue {
         return advance(true);
     }
 
+    /**
+     * Returns the track that {@link #nextAfterEnd()} would select without
+     * advancing the cursor or, for shuffle, consuming random state. A shuffle
+     * wrap that would rebuild the order cannot be predicted, so it returns
+     * {@code null} to let the caller fall back to lazy loading.
+     */
+    public Track peekNextAfterEnd() {
+        if (tracks.isEmpty()) {
+            return null;
+        }
+        if (mode == PlaybackMode.REPEAT_ONE && current() != null) {
+            return current();
+        }
+        if (mode == PlaybackMode.SHUFFLE) {
+            if (shufflePosition + 1 < shuffleOrder.size()) {
+                return trackAt(shuffleOrder.get(shufflePosition + 1));
+            }
+            return null;
+        }
+        int next = findPlayable(cursor + 1, 1);
+        if (next < 0 && mode == PlaybackMode.REPEAT_ALL) {
+            next = findPlayable(0, 1);
+        }
+        return next < 0 ? null : trackAt(next);
+    }
+
     public Track previous() {
         if (tracks.isEmpty()) {
             return null;

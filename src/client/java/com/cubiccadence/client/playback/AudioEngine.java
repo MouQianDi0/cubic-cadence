@@ -62,6 +62,9 @@ public class AudioEngine implements PlaybackEngine, AutoCloseable {
     private SoundBuffer soundBuffer;
     private SoundBuffer streamingBootstrapBuffer;
     private JavaSoundStreamingAudioStream activeStream;
+    private JavaSoundStreamingAudioStream preloadedStream;
+    private PlaybackSource preloadedSource;
+    private long preloadGeneration;
     private LocalMusicSoundInstance currentInstance;
     private boolean streaming;
     private long playbackStartedNanos;
@@ -156,6 +159,48 @@ public class AudioEngine implements PlaybackEngine, AutoCloseable {
                     }
                     installAndPlay(operation, decoded);
                 }));
+    }
+
+    @Override
+    public void preload(PlaybackSource source) {
+        Objects.requireNonNull(source, "source");
+        ensureOpen();
+        if (!("http".equalsIgnoreCase(source.uri().getScheme())
+                || "https".equalsIgnoreCase(source.uri().getScheme()))) {
+            return;
+        }
+        long generation = ++this.preloadGeneration;
+        Minecraft minecraft = Minecraft.getInstance();
+        JavaSoundStreamingAudioStream.open(
+                        source,
+                        this.streamHttpClient,
+                        this.streamExecutor,
+                        this.streamCleanupExecutor
+                )
+                .whenComplete((stream, throwable) -> minecraft.execute(() -> {
+                    if (this.closed || generation != this.preloadGeneration) {
+                        closeQuietly(stream);
+                        return;
+                    }
+                    if (throwable != null || stream == null) {
+                        return;
+                    }
+                    JavaSoundStreamingAudioStream previous = this.preloadedStream;
+                    this.preloadedStream = stream;
+                    this.preloadedSource = source;
+                    if (previous != null && previous != stream) {
+                        closeQuietly(previous);
+                    }
+                }));
+    }
+
+    @Override
+    public void cancelPreload() {
+        this.preloadGeneration++;
+        JavaSoundStreamingAudioStream stream = this.preloadedStream;
+        this.preloadedStream = null;
+        this.preloadedSource = null;
+        closeQuietly(stream);
     }
 
     public void pause() {
@@ -303,6 +348,7 @@ public class AudioEngine implements PlaybackEngine, AutoCloseable {
             return;
         }
         stop();
+        cancelPreload();
         this.closed = true;
         this.decodeExecutor.shutdownNow();
         this.streamExecutor.shutdownNow();
@@ -326,6 +372,13 @@ public class AudioEngine implements PlaybackEngine, AutoCloseable {
         this.durationMs = source.playableDurationMs();
         this.state = PlaybackState.BUFFERING;
         Minecraft minecraft = Minecraft.getInstance();
+
+        JavaSoundStreamingAudioStream ready = consumePreloaded(source);
+        if (ready != null) {
+            installStreamingAndPlay(operation, ready);
+            return;
+        }
+
         JavaSoundStreamingAudioStream.open(
                         source,
                         this.streamHttpClient,
@@ -343,6 +396,20 @@ public class AudioEngine implements PlaybackEngine, AutoCloseable {
                     }
                     installStreamingAndPlay(operation, stream);
                 }));
+    }
+
+    private JavaSoundStreamingAudioStream consumePreloaded(PlaybackSource source) {
+        JavaSoundStreamingAudioStream stream = this.preloadedStream;
+        if (stream == null || this.preloadedSource == null || !this.preloadedSource.equals(source)) {
+            return null;
+        }
+        this.preloadedStream = null;
+        this.preloadedSource = null;
+        if (stream.streamState() != JavaSoundStreamingAudioStream.StreamState.RUNNING) {
+            closeQuietly(stream);
+            return null;
+        }
+        return stream;
     }
 
     private DecodedAudio decodeResource(Minecraft minecraft, Identifier resourceId) {

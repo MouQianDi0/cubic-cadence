@@ -164,6 +164,7 @@ public class CubicCadenceClient implements ClientModInitializer {
             AUDIO_ENGINE.tick();
             playerController.tick();
             lyricsManager.tick(playerController.getCurrentTrack());
+            lyricsManager.preload(playerController.getUpcomingTrack());
             libraryManager.tick();
             playlistDetailManager.tick();
             while (openLibraryKey.consumeClick()) {

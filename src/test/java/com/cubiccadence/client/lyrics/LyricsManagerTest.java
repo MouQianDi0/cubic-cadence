@@ -66,6 +66,25 @@ class LyricsManagerTest {
         assertTrue(manager.getLyrics().orElseThrow().lines().isEmpty());
     }
 
+    @Test
+    void preloadsUpcomingLyricsWithoutDisturbingTheCurrentTrack() {
+        FakeProvider provider = new FakeProvider();
+        LyricsManager manager = new LyricsManager(provider, () -> java.util.Optional.of(SESSION), Runnable::run);
+        provider.responses.put("1", CompletableFuture.completedFuture(lyrics("1", "第一首")));
+        provider.responses.put("2", CompletableFuture.completedFuture(lyrics("2", "第二首")));
+
+        manager.tick(track("1"));
+        assertEquals("1", manager.getLyrics().orElseThrow().trackId());
+
+        manager.preload(track("2"));
+        assertEquals("1", manager.getLyrics().orElseThrow().trackId());
+        assertEquals(1, provider.requests.get("2"));
+
+        manager.tick(track("2"));
+        assertEquals("2", manager.getLyrics().orElseThrow().trackId());
+        assertEquals(1, provider.requests.get("2"));
+    }
+
     private static Track track(String id) {
         return new Track("netease", id, "track", List.of(), "album", "", 60_000L, Availability.PLAYABLE);
     }
