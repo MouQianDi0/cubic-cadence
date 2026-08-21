@@ -8,14 +8,10 @@ import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.UnsupportedAudioFileException;
 import java.io.BufferedInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.Arrays;
-import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CompletableFuture;
@@ -37,7 +33,9 @@ final class JavaSoundStreamingAudioStream implements AudioStream {
 
     private static final int PREBUFFER_CHUNKS = 12;
     private static final long READ_WAIT_MILLIS = 50L;
-    private static final long MAX_STARVATION_NANOS = TimeUnit.SECONDS.toNanos(10L);
+    static final long MAX_STARVATION_NANOS = TimeUnit.SECONDS.toNanos(15L);
+    static final int MAX_NETWORK_RETRIES = 3;
+    private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(30L);
     private static final long MIN_PREMATURE_EOF_TOLERANCE_MS = 5_000L;
     private static final byte[] END_OF_STREAM = new byte[0];
 
@@ -50,6 +48,7 @@ final class JavaSoundStreamingAudioStream implements AudioStream {
 
     private final AudioInputStream encodedStream;
     private final AudioInputStream pcmStream;
+    private final ResumableHttpInputStream networkStream;
     private final AudioFormat format;
     private final long expectedDurationMs;
     private final Executor cleanupExecutor;
@@ -72,13 +71,15 @@ final class JavaSoundStreamingAudioStream implements AudioStream {
             AudioInputStream encodedStream,
             AudioInputStream pcmStream,
             long expectedDurationMs,
-            Executor cleanupExecutor
+            Executor cleanupExecutor,
+            ResumableHttpInputStream networkStream
     ) {
         this.encodedStream = Objects.requireNonNull(encodedStream, "encodedStream");
         this.pcmStream = Objects.requireNonNull(pcmStream, "pcmStream");
         this.format = pcmStream.getFormat();
         this.expectedDurationMs = Math.max(0L, expectedDurationMs);
         this.cleanupExecutor = Objects.requireNonNull(cleanupExecutor, "cleanupExecutor");
+        this.networkStream = networkStream;
     }
 
     static CompletableFuture<JavaSoundStreamingAudioStream> open(
@@ -239,9 +240,16 @@ final class JavaSoundStreamingAudioStream implements AudioStream {
             starved = true;
             starvationStartedNanos = now;
         } else if (now - starvationStartedNanos >= MAX_STARVATION_NANOS) {
-            IOException exception = new IOException("Online audio stream stalled for more than 10 seconds");
-            fail(exception);
-            throw exception;
+            if (networkStream != null && networkStream.requestReconnect()) {
+                starvationStartedNanos = now;
+            } else {
+                IOException exception = new IOException(
+                        "Online audio stream stalled and could not reconnect after "
+                                + MAX_NETWORK_RETRIES + " retries"
+                );
+                fail(exception);
+                throw exception;
+            }
         }
         while (output.hasRemaining()) {
             output.put((byte) 0);
@@ -404,30 +412,19 @@ final class JavaSoundStreamingAudioStream implements AudioStream {
         if (source.expiresAtEpochMs() > 0L && source.expiresAtEpochMs() <= System.currentTimeMillis()) {
             throw new IllegalStateException("Playback source has expired");
         }
-        HttpRequest.Builder builder = HttpRequest.newBuilder(source.uri())
-                .timeout(Duration.ofSeconds(20))
-                .header("Accept", "audio/mpeg,audio/*;q=0.8")
-                .header("User-Agent", "Cubic-Cadence/1.0")
-                .GET();
-        for (Map.Entry<String, String> header : source.requestHeaders().entrySet()) {
-            if (!header.getKey().equalsIgnoreCase("cookie")
-                    && !header.getKey().equalsIgnoreCase("authorization")) {
-                builder.header(header.getKey(), header.getValue());
-            }
-        }
+        ResumableHttpInputStream network = null;
         try {
-            HttpResponse<InputStream> response = httpClient.send(
-                    builder.build(),
-                    HttpResponse.BodyHandlers.ofInputStream()
+            network = ResumableHttpInputStream.open(
+                    source,
+                    httpClient,
+                    cleanupExecutor,
+                    REQUEST_TIMEOUT,
+                    MAX_NETWORK_RETRIES
             );
-            if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                response.body().close();
-                throw new IOException("Audio CDN returned HTTP " + response.statusCode());
-            }
-            BufferedInputStream network = new BufferedInputStream(response.body(), PCM_CHUNK_BYTES);
+            BufferedInputStream bufferedNetwork = new BufferedInputStream(network, PCM_CHUNK_BYTES);
             javazoom.spi.mpeg.sampled.file.MpegAudioFileReader reader =
                     new javazoom.spi.mpeg.sampled.file.MpegAudioFileReader();
-            AudioInputStream encoded = reader.getAudioInputStream(network);
+            AudioInputStream encoded = reader.getAudioInputStream(bufferedNetwork);
             AudioFormat sourceFormat = encoded.getFormat();
             if (sourceFormat.getChannels() != 1 && sourceFormat.getChannels() != 2) {
                 encoded.close();
@@ -449,11 +446,16 @@ final class JavaSoundStreamingAudioStream implements AudioStream {
                     encoded,
                     pcm,
                     source.playableDurationMs(),
-                    cleanupExecutor
+                    cleanupExecutor,
+                    network
             );
-        } catch (IOException | InterruptedException | UnsupportedAudioFileException exception) {
-            if (exception instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
+        } catch (IOException | UnsupportedAudioFileException exception) {
+            if (network != null) {
+                try {
+                    network.close();
+                } catch (IOException ignored) {
+                    // The opening failure is the actionable error.
+                }
             }
             throw new IllegalStateException("Unable to open online MP3 stream", exception);
         }

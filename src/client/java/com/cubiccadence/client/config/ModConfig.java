@@ -30,6 +30,14 @@ public class ModConfig {
     private boolean hudShowArtist = true;
     private boolean hudShowProgress = true;
     private boolean hudShowLyrics = true;
+    private float hudScale = 1.0f;
+    private float hudTitleScale = 1.0f;
+    private float hudLyricScale = 1.0f;
+    private int hudLyricColor = HudSettings.DEFAULT_LYRIC_COLOR;
+    private boolean hudBackgroundEnabled = true;
+    private HudPosition hudPosition = HudPosition.TOP_LEFT;
+    private int hudOffsetX;
+    private int hudOffsetY;
     private AudioQuality audioQuality = AudioQuality.STANDARD;
     private int lastTestTrackIndex;
     private String apiEnhancedBaseUrl = "https://cub.cubiccadence.top/";
@@ -108,6 +116,44 @@ public class ModConfig {
         save();
     }
 
+    public HudSettings getHudSettings() {
+        return new HudSettings(
+                hudEnabled,
+                hudShowCover,
+                hudShowTitle,
+                hudShowArtist,
+                hudShowProgress,
+                hudShowLyrics,
+                hudScale,
+                hudTitleScale,
+                hudLyricScale,
+                hudLyricColor,
+                hudBackgroundEnabled,
+                hudPosition,
+                hudOffsetX,
+                hudOffsetY
+        );
+    }
+
+    public void setHudSettings(HudSettings settings) {
+        HudSettings normalized = settings == null ? HudSettings.defaults() : settings;
+        this.hudEnabled = normalized.enabled();
+        this.hudShowCover = normalized.showCover();
+        this.hudShowTitle = normalized.showTitle();
+        this.hudShowArtist = normalized.showArtist();
+        this.hudShowProgress = normalized.showProgress();
+        this.hudShowLyrics = normalized.showLyrics();
+        this.hudScale = normalized.scale();
+        this.hudTitleScale = normalized.titleScale();
+        this.hudLyricScale = normalized.lyricScale();
+        this.hudLyricColor = normalized.lyricColor();
+        this.hudBackgroundEnabled = normalized.backgroundEnabled();
+        this.hudPosition = normalized.position();
+        this.hudOffsetX = normalized.offsetX();
+        this.hudOffsetY = normalized.offsetY();
+        save();
+    }
+
     public AudioQuality getAudioQuality() {
         return audioQuality;
     }
@@ -164,6 +210,31 @@ public class ModConfig {
             if (root.has("hudShowLyrics")) {
                 this.hudShowLyrics = root.get("hudShowLyrics").getAsBoolean();
             }
+            if (root.has("hudScale")) {
+                this.hudScale = root.get("hudScale").getAsFloat();
+            }
+            if (root.has("hudTitleScale")) {
+                this.hudTitleScale = root.get("hudTitleScale").getAsFloat();
+            }
+            if (root.has("hudLyricScale")) {
+                this.hudLyricScale = root.get("hudLyricScale").getAsFloat();
+            }
+            if (root.has("hudLyricColor")) {
+                this.hudLyricColor = root.get("hudLyricColor").getAsInt();
+            }
+            if (root.has("hudBackgroundEnabled")) {
+                this.hudBackgroundEnabled = root.get("hudBackgroundEnabled").getAsBoolean();
+            }
+            if (root.has("hudPosition")) {
+                this.hudPosition = parseHudPosition(root.get("hudPosition").getAsString());
+            }
+            if (root.has("hudOffsetX")) {
+                this.hudOffsetX = root.get("hudOffsetX").getAsInt();
+            }
+            if (root.has("hudOffsetY")) {
+                this.hudOffsetY = root.get("hudOffsetY").getAsInt();
+            }
+            applyNormalizedHudSettings();
             if (root.has("audioQuality")) {
                 this.audioQuality = parseAudioQuality(root.get("audioQuality").getAsString());
             }
@@ -194,6 +265,25 @@ public class ModConfig {
         } catch (IllegalArgumentException | NullPointerException e) {
             return AudioQuality.STANDARD;
         }
+    }
+
+    private static HudPosition parseHudPosition(String value) {
+        try {
+            return HudPosition.valueOf(value);
+        } catch (IllegalArgumentException | NullPointerException e) {
+            return HudPosition.TOP_LEFT;
+        }
+    }
+
+    private void applyNormalizedHudSettings() {
+        HudSettings settings = getHudSettings();
+        this.hudScale = settings.scale();
+        this.hudTitleScale = settings.titleScale();
+        this.hudLyricScale = settings.lyricScale();
+        this.hudLyricColor = settings.lyricColor();
+        this.hudPosition = settings.position();
+        this.hudOffsetX = settings.offsetX();
+        this.hudOffsetY = settings.offsetY();
     }
 
     private static Path configPath() {
