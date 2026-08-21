@@ -104,7 +104,7 @@ IDE 的配置与运行方式请参考 [Fabric 官方文档](https://docs.fabricm
 
 ### 音乐库主页
 
-### ![音乐库主页](docs\screenshots\music-library.jpg)
+![音乐库主页](docs/screenshots/music-library.jpg)
 
 ### 扫码登录
 
