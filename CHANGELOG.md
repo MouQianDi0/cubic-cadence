@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-08-21 23:01:51 - 修复问题（在线音频超时后按原位置无缝续播）
+
+- **变更概述**：修复在线音乐播放过程中网络响应停止传输后，播放器等待 10 秒便直接进入 `ERROR` 并显示“播放失败，请查看日志”的问题。根因是原有 HTTP 请求超时只约束建连/响应阶段，已经建立的响应体读取可能长期阻塞；PCM 消费端只能填充短暂静音，超过饥饿阈值后直接失败，且没有能够保留 MP3 解码状态和原始字节位置的重连机制。
+- **修改文件**：
+  - `src/client/java/com/cubiccadence/client/playback/ResumableHttpInputStream.java`
+  - `src/client/java/com/cubiccadence/client/playback/JavaSoundStreamingAudioStream.java`
+  - `src/test/java/com/cubiccadence/client/playback/ResumableHttpInputStreamTest.java`
+  - `src/test/java/com/cubiccadence/client/playback/JavaSoundStreamingAudioStreamTest.java`
+- **变更内容**：
+  - 新增 `ResumableHttpInputStream`，精确累计已经交给 MP3 解码器的原始字节数；连接异常或响应体停滞时使用 `Range: bytes=<offset>-` 从下一未交付字节重连，保持同一个 JavaSound 解码器、OpenAL 流和播放时钟，不重新播放歌曲；
+  - 续传请求严格要求 HTTP `206` 且 `Content-Range` 起点与累计字节位置完全一致；CDN 返回整文件 `200`、缺失/错误范围或三次重连均失败时安全终止，避免把重复或错位的 MP3 数据拼入当前流；
+  - 无 PCM 数据的饥饿阈值由 10 秒延长为 15 秒，首次连接之外最多自动重连 3 次；请求响应超时由 20 秒延长为 30 秒；恢复期间维持 `BUFFERING`，数据重新到达后继续原曲位置；
+  - 网络响应体关闭仍投递到既有清理线程，避免在 Minecraft 声音线程执行阻塞 I/O；PCM 队列继续保持 `16 × 64 KiB = 1 MiB` 硬上限，不缓存或重新下载整首歌曲；
+  - 新增断线后精确字节续接、主动停滞重连、三次上限、CDN 忽略 Range、`Content-Range` 错位及确认参数等测试。
+- **风险**：中等风险，改动位于在线 MP3 网络输入层。无缝续播依赖 CDN 支持标准 HTTP Range；若 CDN 不支持或临时 URL 已失效，播放器会在三次安全重连失败后保留明确错误，不会从头播放冒充续播。自动化测试覆盖字节连续性和失败边界，但真实 CDN 的 Range 响应、听感连续性及网络中断恢复仍需在游戏内使用真实账号人工验收。
+- **验证结果**：`.\gradlew.bat build --no-daemon` 构建成功，73 个测试全部通过；首次全量测试曾遇到一个 Windows `@TempDir` 删除竞态，随后完整构建复跑通过，确认与本次播放修改无关。
+
 ## 2026-08-21 17:46:10 - 修复问题（ESC 暂停后进度条空跑并最终播放失败）
 
 - **变更概述**：修复按 ESC 打开游戏菜单/设置后，音乐被原版暂停但 HUD 进度条继续推进到 100% 并最终弹出“播放失败”的问题。根因是原版暂停只走 `SoundEngine.pauseAllExcept(...)` 停掉 OpenAL 通道，不会经过本 Mod 的 `AudioEngine.pause()`，导致播放挂钟与流式生产线程全程无感知：挂钟继续外推使进度条空跑，生产线程持续填满有界队列后阻塞、网络连接长时间空闲被 CDN 掐断，流进入 `FAILED` 后被误判为播放失败。

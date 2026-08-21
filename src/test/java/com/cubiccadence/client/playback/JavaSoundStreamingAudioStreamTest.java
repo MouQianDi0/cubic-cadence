@@ -55,6 +55,12 @@ class JavaSoundStreamingAudioStreamTest {
     }
 
     @Test
+    void networkRecoveryLimitsMatchTheConfirmedPlaybackPolicy() {
+        assertEquals(TimeUnit.SECONDS.toNanos(15L), JavaSoundStreamingAudioStream.MAX_STARVATION_NANOS);
+        assertEquals(3, JavaSoundStreamingAudioStream.MAX_NETWORK_RETRIES);
+    }
+
+    @Test
     void realDataClearsTemporaryStarvation() throws Exception {
         byte[] pcm = new byte[JavaSoundStreamingAudioStream.PCM_CHUNK_BYTES];
         Arrays.fill(pcm, (byte) 7);
@@ -191,7 +197,7 @@ class JavaSoundStreamingAudioStreamTest {
 
     private JavaSoundStreamingAudioStream stream(InputStream input, long expectedDurationMs) {
         AudioInputStream audio = new AudioInputStream(input, FORMAT, -1L);
-        return new JavaSoundStreamingAudioStream(audio, audio, expectedDurationMs, cleanupExecutor);
+        return new JavaSoundStreamingAudioStream(audio, audio, expectedDurationMs, cleanupExecutor, null);
     }
 
     private static void waitUntil(CheckedBooleanSupplier condition) {
