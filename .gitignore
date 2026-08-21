@@ -46,3 +46,4 @@ replay_*.log
 .env.example
 
 gradle.properties
+logs

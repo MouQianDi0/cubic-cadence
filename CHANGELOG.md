@@ -1,5 +1,39 @@
 # Changelog
 
+## 2026-08-21 23:49:53 - 优化代码（HUD 预览与游戏窗口保持相同比例）
+
+- **变更概述**：根据实际使用反馈，将 HUD 设置页左侧预览屏幕改为与当前游戏窗口严格保持相同宽高比，避免铺满高窄区域后造成画面和 HUD 位置观感失真。
+- **修改文件**：
+  - `src/client/java/com/cubiccadence/client/ui/screen/HudSettingsScreen.java`
+- **变更内容**：
+  - 在扩展后的完整左侧区域内，以当前游戏窗口 `width : height` 计算可容纳的最大预览矩形；使用统一缩放系数，禁止横向或纵向独立拉伸；
+  - 预览边框只包围实际游戏画面，无法匹配比例的剩余区域不再绘制为空预览容器；
+  - HUD 继续以完整游戏窗口作为逻辑视口，再与游戏画面使用同一个缩放系数绘制，确保九宫格锚点、偏移方向、相对尺寸和实际游戏一致。
+- **风险**：低风险，仅调整设置页预览尺寸与坐标换算；当左侧可用区域和游戏窗口比例不一致时会自然出现少量上下或左右留白，这是保持比例所必需的。真实 HUD 渲染逻辑和配置数据未改动。
+- **验证结果**：`.\gradlew.bat build --no-daemon` 构建成功，全部测试通过。
+
+## 2026-08-21 23:43:31 - 新增功能（HUD 全量自定义与满幅实时预览）
+
+- **变更概述**：为正在播放 HUD 增加内容显示、整体尺寸、标题大小、歌词大小、歌词颜色、背景和屏幕位置自定义；设置页重做为左侧实时预览、右侧分组调节，并根据实际截图移除居中限宽和内部小预览框，让预览画布铺满左侧剩余空间，仅保留屏幕边距及与控制区的间隔。
+- **修改文件**：
+  - `src/client/java/com/cubiccadence/client/config/HudPosition.java`
+  - `src/client/java/com/cubiccadence/client/config/HudSettings.java`
+  - `src/client/java/com/cubiccadence/client/config/ModConfig.java`
+  - `src/client/java/com/cubiccadence/client/ui/hud/NowPlayingHudRenderer.java`
+  - `src/client/java/com/cubiccadence/client/ui/hud/NowPlayingHudElement.java`
+  - `src/client/java/com/cubiccadence/client/ui/screen/HudSettingsScreen.java`
+  - `src/client/resources/assets/cubic-cadence/lang/zh_cn.json`
+  - `src/client/resources/assets/cubic-cadence/lang/en_us.json`
+  - `src/test/java/com/cubiccadence/client/config/HudSettingsTest.java`
+- **变更内容**：
+  - 新增 50%–200% HUD 整体、标题和歌词缩放，RGB 歌词颜色、背景开关，以及九宫格锚点 + X/Y 像素偏移；所有数值在配置边界统一限制范围，旧配置缺少新字段时继续使用与原 HUD 一致的默认值；
+  - 抽取真实 HUD 与设置预览共用的渲染器，统一文字截断、缩放后尺寸测量、当前/下一句歌词配色、封面占位、边界限制和锚点坐标，避免预览与实际效果使用两套算法；
+  - 设置页右侧按“显示 / 尺寸 / 外观 / 位置”四个标签分组，提供恢复默认和完成按钮；编辑期间只维护临时设置，关闭页面时一次性保存，避免拖动滑块时高频写配置文件；
+  - 左侧预览从屏幕左侧边距延伸至右侧控制区，底部延伸至屏幕边距；预览场景直接填满画布，HUD 以可读尺寸实时响应开关、缩放、颜色、锚点和偏移，不再缩在大空框内；
+  - 新增默认值、非法缩放/颜色/偏移归一化、九宫格定位及越界限制测试，并补齐中英文界面文案。
+- **风险**：中低风险，改动集中在客户端 HUD 配置、渲染和设置界面；预览画布会随可用区域改变宽高比，因此用于直观展示位置和大小，不承诺与所有游戏窗口比例逐像素一致。真实 HUD 和预览共用同一渲染器，位置和尺寸逻辑保持一致；不同 GUI 缩放、超宽/窄窗口下的最终观感仍需游戏内人工验收。
+- **验证结果**：`.\gradlew.bat build --no-daemon` 构建成功，全部测试通过（含新增 HUD 配置与定位测试）；中英文语言 JSON 已完成解析校验。
+
 ## 2026-08-21 23:01:51 - 修复问题（在线音频超时后按原位置无缝续播）
 
 - **变更概述**：修复在线音乐播放过程中网络响应停止传输后，播放器等待 10 秒便直接进入 `ERROR` 并显示“播放失败，请查看日志”的问题。根因是原有 HTTP 请求超时只约束建连/响应阶段，已经建立的响应体读取可能长期阻塞；PCM 消费端只能填充短暂静音，超过饥饿阈值后直接失败，且没有能够保留 MP3 解码状态和原始字节位置的重连机制。
