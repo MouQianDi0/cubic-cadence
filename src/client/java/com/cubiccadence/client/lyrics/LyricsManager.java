@@ -5,10 +5,12 @@ import com.cubiccadence.model.SyncedLyrics;
 import com.cubiccadence.model.Track;
 import com.cubiccadence.provider.MusicProvider;
 
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
@@ -21,6 +23,7 @@ public final class LyricsManager implements AutoCloseable {
     private final Supplier<Optional<AuthSession>> sessionSupplier;
     private final Executor callbackExecutor;
     private final AtomicLong requestGeneration = new AtomicLong();
+    private final Set<TrackKey> preloading = new HashSet<>();
     private final Map<TrackKey, SyncedLyrics> cache = new LinkedHashMap<>(16, 0.75f, true) {
         @Override
         protected boolean removeEldestEntry(Map.Entry<TrackKey, SyncedLyrics> eldest) {
@@ -97,6 +100,41 @@ public final class LyricsManager implements AutoCloseable {
                 }));
     }
 
+    /** Fetches lyrics for an upcoming track without disturbing the current one. */
+    public void preload(Track track) {
+        if (closed || track == null) {
+            return;
+        }
+        TrackKey key = new TrackKey(track.providerId(), track.trackId());
+        if (cache.containsKey(key)) {
+            return;
+        }
+        AuthSession session = sessionSupplier.get().orElse(null);
+        if (session == null || !provider.id().equals(key.providerId())) {
+            return;
+        }
+        synchronized (preloading) {
+            if (!preloading.add(key)) {
+                return;
+            }
+        }
+        provider.getLyrics(session, key.trackId())
+                .whenComplete((loaded, throwable) -> callbackExecutor.execute(() -> {
+                    synchronized (preloading) {
+                        preloading.remove(key);
+                    }
+                    if (closed) {
+                        return;
+                    }
+                    if (throwable != null || loaded == null
+                            || !key.providerId().equals(loaded.providerId())
+                            || !key.trackId().equals(loaded.trackId())) {
+                        return;
+                    }
+                    cache.put(key, loaded);
+                }));
+    }
+
     public void clearCurrent() {
         requestGeneration.incrementAndGet();
         currentKey = null;
@@ -113,6 +151,7 @@ public final class LyricsManager implements AutoCloseable {
     public void close() {
         closed = true;
         clearCurrent();
+        preloading.clear();
         cache.clear();
     }
 

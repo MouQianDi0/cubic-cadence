@@ -62,11 +62,16 @@ public class AudioEngine implements PlaybackEngine, AutoCloseable {
     private SoundBuffer soundBuffer;
     private SoundBuffer streamingBootstrapBuffer;
     private JavaSoundStreamingAudioStream activeStream;
+    private JavaSoundStreamingAudioStream preloadedStream;
+    private PlaybackSource preloadedSource;
+    private long preloadGeneration;
     private LocalMusicSoundInstance currentInstance;
     private boolean streaming;
     private long playbackStartedNanos;
     private long pausedAtNanos;
     private long totalPausedNanos;
+    private volatile boolean gamePaused;
+    private volatile long gamePausedAtNanos;
 
     public AudioEngine(AudioDecoder decoder) {
         this.decoder = Objects.requireNonNull(decoder, "decoder");
@@ -158,17 +163,61 @@ public class AudioEngine implements PlaybackEngine, AutoCloseable {
                 }));
     }
 
+    @Override
+    public void preload(PlaybackSource source) {
+        Objects.requireNonNull(source, "source");
+        ensureOpen();
+        if (!("http".equalsIgnoreCase(source.uri().getScheme())
+                || "https".equalsIgnoreCase(source.uri().getScheme()))) {
+            return;
+        }
+        long generation = ++this.preloadGeneration;
+        Minecraft minecraft = Minecraft.getInstance();
+        JavaSoundStreamingAudioStream.open(
+                        source,
+                        this.streamHttpClient,
+                        this.streamExecutor,
+                        this.streamCleanupExecutor
+                )
+                .whenComplete((stream, throwable) -> minecraft.execute(() -> {
+                    if (this.closed || generation != this.preloadGeneration) {
+                        closeQuietly(stream);
+                        return;
+                    }
+                    if (throwable != null || stream == null) {
+                        return;
+                    }
+                    JavaSoundStreamingAudioStream previous = this.preloadedStream;
+                    this.preloadedStream = stream;
+                    this.preloadedSource = source;
+                    if (previous != null && previous != stream) {
+                        closeQuietly(previous);
+                    }
+                }));
+    }
+
+    @Override
+    public void cancelPreload() {
+        this.preloadGeneration++;
+        JavaSoundStreamingAudioStream stream = this.preloadedStream;
+        this.preloadedStream = null;
+        this.preloadedSource = null;
+        closeQuietly(stream);
+    }
+
     public void pause() {
-        if (this.state != PlaybackState.PLAYING || this.currentInstance == null) {
+        if ((this.state != PlaybackState.PLAYING && this.state != PlaybackState.BUFFERING)
+                || this.currentInstance == null) {
             return;
         }
-        ChannelAccess.ChannelHandle handle = currentHandle();
-        if (handle == null) {
-            return;
+        if (this.pausedAtNanos == 0L) {
+            this.pausedAtNanos = System.nanoTime();
         }
-        handle.execute(Channel::pause);
-        this.pausedAtNanos = System.nanoTime();
         this.state = PlaybackState.PAUSED;
+        ChannelAccess.ChannelHandle handle = currentHandle();
+        if (handle != null) {
+            handle.execute(Channel::pause);
+        }
     }
 
     public void resume() {
@@ -176,10 +225,9 @@ public class AudioEngine implements PlaybackEngine, AutoCloseable {
             return;
         }
         ChannelAccess.ChannelHandle handle = currentHandle();
-        if (handle == null) {
-            return;
+        if (handle != null) {
+            handle.execute(Channel::unpause);
         }
-        handle.execute(Channel::unpause);
         if (this.pausedAtNanos != 0L) {
             this.totalPausedNanos += System.nanoTime() - this.pausedAtNanos;
             this.pausedAtNanos = 0L;
@@ -244,10 +292,15 @@ public class AudioEngine implements PlaybackEngine, AutoCloseable {
         if (this.playbackStartedNanos == 0L) {
             return 0L;
         }
-        long endNanos = (this.state == PlaybackState.PAUSED || this.state == PlaybackState.BUFFERING)
-                && this.pausedAtNanos != 0L
-                ? this.pausedAtNanos
-                : System.nanoTime();
+        long endNanos;
+        if (this.gamePaused && this.gamePausedAtNanos != 0L) {
+            endNanos = this.gamePausedAtNanos;
+        } else if ((this.state == PlaybackState.PAUSED || this.state == PlaybackState.BUFFERING)
+                && this.pausedAtNanos != 0L) {
+            endNanos = this.pausedAtNanos;
+        } else {
+            endNanos = System.nanoTime();
+        }
         long elapsedNanos = Math.max(0L, endNanos - this.playbackStartedNanos - this.totalPausedNanos);
         return Math.min(this.durationMs, elapsedNanos / 1_000_000L);
     }
@@ -261,6 +314,10 @@ public class AudioEngine implements PlaybackEngine, AutoCloseable {
     }
 
     public void tick() {
+        syncGamePause();
+        if (this.gamePaused) {
+            return;
+        }
         LocalMusicSoundInstance instance = this.currentInstance;
         if (instance == null || (this.state != PlaybackState.PLAYING
                 && this.state != PlaybackState.PAUSED
@@ -297,12 +354,36 @@ public class AudioEngine implements PlaybackEngine, AutoCloseable {
         }
     }
 
+    private void syncGamePause() {
+        boolean paused = Minecraft.getInstance().isPaused();
+        if (paused == this.gamePaused) {
+            return;
+        }
+        this.gamePaused = paused;
+        JavaSoundStreamingAudioStream stream = this.activeStream;
+        if (paused) {
+            this.gamePausedAtNanos = System.nanoTime();
+            if (stream != null) {
+                stream.pause();
+            }
+        } else {
+            if (this.gamePausedAtNanos != 0L) {
+                this.totalPausedNanos += System.nanoTime() - this.gamePausedAtNanos;
+                this.gamePausedAtNanos = 0L;
+            }
+            if (stream != null) {
+                stream.resume();
+            }
+        }
+    }
+
     @Override
     public void close() {
         if (this.closed) {
             return;
         }
         stop();
+        cancelPreload();
         this.closed = true;
         this.decodeExecutor.shutdownNow();
         this.streamExecutor.shutdownNow();
@@ -326,6 +407,13 @@ public class AudioEngine implements PlaybackEngine, AutoCloseable {
         this.durationMs = source.playableDurationMs();
         this.state = PlaybackState.BUFFERING;
         Minecraft minecraft = Minecraft.getInstance();
+
+        JavaSoundStreamingAudioStream ready = consumePreloaded(source);
+        if (ready != null) {
+            installStreamingAndPlay(operation, ready);
+            return;
+        }
+
         JavaSoundStreamingAudioStream.open(
                         source,
                         this.streamHttpClient,
@@ -343,6 +431,20 @@ public class AudioEngine implements PlaybackEngine, AutoCloseable {
                     }
                     installStreamingAndPlay(operation, stream);
                 }));
+    }
+
+    private JavaSoundStreamingAudioStream consumePreloaded(PlaybackSource source) {
+        JavaSoundStreamingAudioStream stream = this.preloadedStream;
+        if (stream == null || this.preloadedSource == null || !this.preloadedSource.equals(source)) {
+            return null;
+        }
+        this.preloadedStream = null;
+        this.preloadedSource = null;
+        if (stream.streamState() != JavaSoundStreamingAudioStream.StreamState.RUNNING) {
+            closeQuietly(stream);
+            return null;
+        }
+        return stream;
     }
 
     private DecodedAudio decodeResource(Minecraft minecraft, Identifier resourceId) {
@@ -555,6 +657,8 @@ public class AudioEngine implements PlaybackEngine, AutoCloseable {
         this.playbackStartedNanos = 0L;
         this.pausedAtNanos = 0L;
         this.totalPausedNanos = 0L;
+        this.gamePaused = false;
+        this.gamePausedAtNanos = 0L;
     }
 
     private static void closeQuietly(JavaSoundStreamingAudioStream stream) {

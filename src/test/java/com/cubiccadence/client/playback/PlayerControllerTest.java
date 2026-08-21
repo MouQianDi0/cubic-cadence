@@ -27,6 +27,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
@@ -165,6 +166,68 @@ class PlayerControllerTest {
         assertEquals(5_000L, controller.getPositionMs());
     }
 
+    @Test
+    void preloadsNextTrackAndReusesItOnNaturalEnd() {
+        FakeProvider provider = new FakeProvider();
+        FakeEngine engine = new FakeEngine();
+        PlayerController controller = controller(provider, engine, Optional.of(SESSION));
+        provider.sources.put("1", CompletableFuture.completedFuture(source("1")));
+        provider.sources.put("2", CompletableFuture.completedFuture(source("2")));
+        controller.playQueue(List.of(track("1"), track("2")), 0);
+
+        engine.state = PlaybackState.PLAYING;
+        controller.tick();
+
+        assertEquals(2, provider.resolveCount);
+        assertNotNull(engine.preloaded);
+
+        engine.state = PlaybackState.ENDED;
+        controller.tick();
+
+        assertEquals("2", controller.getCurrentTrack().trackId());
+        assertEquals(2, provider.resolveCount);
+        assertEquals("/2.mp3", engine.played.uri().getPath());
+    }
+
+    @Test
+    void manualNextReusesTheAlreadyPreloadedTrack() {
+        FakeProvider provider = new FakeProvider();
+        FakeEngine engine = new FakeEngine();
+        PlayerController controller = controller(provider, engine, Optional.of(SESSION));
+        provider.sources.put("1", CompletableFuture.completedFuture(source("1")));
+        provider.sources.put("2", CompletableFuture.completedFuture(source("2")));
+        controller.playQueue(List.of(track("1"), track("2")), 0);
+
+        engine.state = PlaybackState.PLAYING;
+        controller.tick();
+        int resolveCountAfterPreload = provider.resolveCount;
+
+        controller.next();
+
+        assertEquals("2", controller.getCurrentTrack().trackId());
+        assertEquals(resolveCountAfterPreload, provider.resolveCount);
+        assertEquals("/2.mp3", engine.played.uri().getPath());
+    }
+
+    @Test
+    void pausedStateIsNotClobberedByBufferingEngineState() {
+        FakeProvider provider = new FakeProvider();
+        FakeEngine engine = new FakeEngine();
+        PlayerController controller = controller(provider, engine, Optional.of(SESSION));
+        provider.sources.put("1", CompletableFuture.completedFuture(source("1")));
+        controller.play(track("1"));
+
+        engine.state = PlaybackState.PLAYING;
+        controller.tick();
+        controller.pause();
+        assertEquals(PlaybackState.PAUSED, controller.getState());
+
+        engine.state = PlaybackState.BUFFERING;
+        controller.tick();
+
+        assertEquals(PlaybackState.PAUSED, controller.getState());
+    }
+
     private static PlayerController controller(
             FakeProvider provider,
             FakeEngine engine,
@@ -201,9 +264,12 @@ class PlayerControllerTest {
     private static final class FakeEngine implements PlaybackEngine {
         private PlaybackState state = PlaybackState.IDLE;
         private PlaybackSource played;
+        private PlaybackSource preloaded;
         private long positionMs;
 
         @Override public void play(PlaybackSource source) { played = source; state = PlaybackState.BUFFERING; }
+        @Override public void preload(PlaybackSource source) { preloaded = source; }
+        @Override public void cancelPreload() { preloaded = null; }
         @Override public void pause() { state = PlaybackState.PAUSED; }
         @Override public void resume() { state = PlaybackState.PLAYING; }
         @Override public void stop() { state = PlaybackState.IDLE; }

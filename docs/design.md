@@ -731,6 +731,8 @@ public final class PlaylistDetailScreen extends Screen {
 
 流式读取明确区分 `RUNNING / EOF / FAILED / CANCELLED`：短时网络断流只向 OpenAL 提供当前所需的静音保活缓冲并进入 `BUFFERING`，数据恢复后继续播放；连续断流超过 10 秒、解码失败或实际 PCM 时长比播放源声明时长短超过容差时进入 `FAILED`，不得作为自然结束自动切歌。PCM 队列硬上限为 1 MiB，OpenAL 仍仅保留原版四段流缓冲，静音数据不另行积压。停止与切歌只在调用线程设置取消标记、清空队列和中断生产任务，JavaSound 与 HTTP 流由最多两个专用清理线程关闭，禁止在客户端渲染 tick 同步等待网络资源释放。
 
+为缩短连续切歌停顿，播放器在进入 `PLAYING` 后通过 `PlaybackQueue.peekNextAfterEnd()` 以非破坏方式定位下一首，并提前解析播放源、调用 `AudioEngine.preload()` 预打开流、`LyricsManager.preload()` 预取歌词。`AudioEngine.preload()` 复用同一 `JavaSoundStreamingAudioStream.open()` 路径完成建连、解码与预缓冲；命中就绪流时 `play()` 直接挂载并跳过重复打开，失败或尚未就绪则退回实时打开。预加载仅对在线 http/https 源生效，本地音源仍走整曲解码缓存；手动切歌、队列到底、停止与退出登录会清理过期预加载，洗牌回绕重排那一拍因无法无消耗预测而回退惰性加载。
+
 Minecraft 声道通过一段静音静态缓冲取得游戏管理的 OpenAL Source。切换到在线流时必须在声音线程依次停止 Source、将 `AL_BUFFER` 设为 0、释放静音引导缓冲、挂载 `AudioStream` 队列并重新播放；OpenAL 不允许静态 `AL_BUFFER` 与 `AL_BUFFERS_QUEUED` 同时存在。挂载后以 `AL_BUFFERS_QUEUED > 0` 作为成功条件，失败时关闭流并进入 `ERROR`，不得由声音 tick 无限重复补充无效缓冲。
 
 ### 9.11 同步歌词与平台无关 HUD

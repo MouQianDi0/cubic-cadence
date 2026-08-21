@@ -65,6 +65,8 @@ final class JavaSoundStreamingAudioStream implements AudioStream {
     private volatile long decodedPcmBytes;
     private volatile Future<?> producerTask;
     private ByteBuffer pending;
+    private final Object pauseMonitor = new Object();
+    private volatile boolean paused;
 
     JavaSoundStreamingAudioStream(
             AudioInputStream encodedStream,
@@ -132,6 +134,22 @@ final class JavaSoundStreamingAudioStream implements AudioStream {
         return chunks.size();
     }
 
+    void pause() {
+        synchronized (pauseMonitor) {
+            paused = true;
+        }
+    }
+
+    void resume() {
+        synchronized (pauseMonitor) {
+            if (!paused) {
+                return;
+            }
+            paused = false;
+            pauseMonitor.notifyAll();
+        }
+    }
+
     @Override
     public AudioFormat getFormat() {
         return format;
@@ -192,6 +210,10 @@ final class JavaSoundStreamingAudioStream implements AudioStream {
             return;
         }
         transitionFromRunning(StreamState.CANCELLED, null);
+        synchronized (pauseMonitor) {
+            paused = false;
+            pauseMonitor.notifyAll();
+        }
         clearStarvation();
         chunks.clear();
         chunks.offer(END_OF_STREAM);
@@ -241,6 +263,10 @@ final class JavaSoundStreamingAudioStream implements AudioStream {
     private void produce() {
         try {
             while (streamState == StreamState.RUNNING) {
+                awaitUnpaused();
+                if (streamState != StreamState.RUNNING) {
+                    return;
+                }
                 byte[] buffer = new byte[PCM_CHUNK_BYTES];
                 int offset = 0;
                 while (offset < buffer.length) {
@@ -275,6 +301,14 @@ final class JavaSoundStreamingAudioStream implements AudioStream {
         } catch (IOException | RuntimeException exception) {
             if (streamState == StreamState.RUNNING) {
                 fail(exception instanceof IOException io ? io : new IOException("Streaming decode failed", exception));
+            }
+        }
+    }
+
+    private void awaitUnpaused() throws InterruptedException {
+        synchronized (pauseMonitor) {
+            while (paused && streamState == StreamState.RUNNING) {
+                pauseMonitor.wait();
             }
         }
     }

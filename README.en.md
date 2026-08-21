@@ -26,6 +26,7 @@ Third-party library: <https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanc
 - **Music library & playlists**: browse "Created playlists", "Collected playlists", and "Liked songs" with pagination, on-demand loading, and cache-first sync.
 - **Availability hints**: distinguish playable, copyright-restricted, membership-required, region-restricted, and quality-unavailable states.
 - **Online streaming**: progressive playback with a 1 MiB PCM queue cap, without caching the whole song; tolerates short stream interruptions and guards against premature auto-skip.
+- **Up-next preload**: while a track plays, pre-open the next audio stream and prefetch its lyrics in the background; natural or manual skip reuses the prepared result to reduce switch gaps.
 - **Local MP3 playback**: bundled JavaSound MP3 decoder, decoding to PCM with no native dependency.
 - **Playback controls**: play, pause, stop, previous, next, plus progress and volume adjustment.
 - **Playback modes**: sequential, repeat-one, repeat-all, and shuffle.

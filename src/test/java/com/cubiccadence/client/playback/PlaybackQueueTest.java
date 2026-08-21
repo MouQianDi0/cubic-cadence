@@ -71,6 +71,59 @@ class PlaybackQueueTest {
         assertSame(next, queue.next());
     }
 
+    @Test
+    void peekNextAfterEndDoesNotAdvanceTheQueue() {
+        Track first = track("1", Availability.PLAYABLE);
+        Track second = track("2", Availability.PLAYABLE);
+        PlaybackQueue queue = new PlaybackQueue(new Random(1));
+        queue.setTracks(List.of(first, second), 0);
+
+        assertSame(second, queue.peekNextAfterEnd());
+        assertSame(first, queue.current());
+        assertSame(second, queue.nextAfterEnd());
+        assertSame(second, queue.current());
+    }
+
+    @Test
+    void peekNextAfterEndWrapsForRepeatAll() {
+        Track first = track("1", Availability.PLAYABLE);
+        Track second = track("2", Availability.PLAYABLE);
+        PlaybackQueue queue = new PlaybackQueue(new Random(1));
+        queue.setTracks(List.of(first, second), 1);
+        queue.setMode(PlaybackMode.REPEAT_ALL);
+
+        assertSame(first, queue.peekNextAfterEnd());
+        assertSame(second, queue.current());
+    }
+
+    @Test
+    void peekNextAfterEndRepeatsCurrentForRepeatOne() {
+        Track first = track("1", Availability.PLAYABLE);
+        Track second = track("2", Availability.PLAYABLE);
+        PlaybackQueue queue = new PlaybackQueue(new Random(1));
+        queue.setTracks(List.of(first, second), 0);
+        queue.setMode(PlaybackMode.REPEAT_ONE);
+
+        assertSame(first, queue.peekNextAfterEnd());
+    }
+
+    @Test
+    void peekNextAfterEndReturnsUpcomingShuffleEntryWithoutAdvancing() {
+        PlaybackQueue queue = new PlaybackQueue(new Random(7));
+        List<Track> tracks = List.of(
+                track("1", Availability.PLAYABLE),
+                track("2", Availability.PLAYABLE),
+                track("3", Availability.PLAYABLE)
+        );
+        queue.setTracks(tracks, 1);
+        queue.setMode(PlaybackMode.SHUFFLE);
+
+        Track peeked = queue.peekNextAfterEnd();
+        Track advanced = queue.next();
+
+        assertSame(peeked, advanced);
+    }
+
     private static Track track(String id, Availability availability) {
         return new Track("netease", id, "track-" + id, List.of(), "album", "", 60_000L, availability);
     }

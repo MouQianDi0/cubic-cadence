@@ -36,6 +36,8 @@ public final class PlayerController {
     private volatile String lastError;
     private volatile boolean endedHandled;
     private volatile boolean expiryRetryUsed;
+    private volatile Track preloadedTrack;
+    private volatile PlaybackSource preloadedSource;
 
     public PlayerController(
             MusicProvider provider,
@@ -113,12 +115,18 @@ public final class PlayerController {
         return queue.getMode();
     }
 
+    /** Next track on a natural completion, without advancing the queue. */
+    public Track getUpcomingTrack() {
+        return queue.peekNextAfterEnd();
+    }
+
     public boolean isTrial() {
         PlaybackSource source = currentSource;
         return source != null && source.access() == PlaybackAccess.TRIAL;
     }
 
     public void playQueue(List<Track> tracks, int selectedIndex) {
+        clearPreload();
         queue.setTracks(tracks, selectedIndex);
         Track selected = queue.current();
         if (selected == null) {
@@ -131,6 +139,7 @@ public final class PlayerController {
 
     public void play(Track track) {
         Objects.requireNonNull(track, "track");
+        clearPreload();
         queue.setTracks(List.of(track));
         expiryRetryUsed = false;
         playSelected(track, 0);
@@ -157,7 +166,7 @@ public final class PlayerController {
             return;
         }
         expiryRetryUsed = false;
-        playSelected(next, 0);
+        playTrack(next, 0);
     }
 
     public void previous() {
@@ -165,6 +174,7 @@ public final class PlayerController {
         if (previous == null) {
             return;
         }
+        clearPreload();
         expiryRetryUsed = false;
         playSelected(previous, 0);
     }
@@ -210,18 +220,22 @@ public final class PlayerController {
                     stopAtQueueEnd();
                 } else {
                     expiryRetryUsed = false;
-                    playSelected(next, 0);
+                    playTrack(next, 0);
                 }
             }
             return;
         }
-        if (state != PlaybackState.RESOLVING) {
+        if (state != PlaybackState.RESOLVING && state != PlaybackState.PAUSED) {
             state = engineState;
+        }
+        if (state == PlaybackState.PLAYING) {
+            maybePreloadNext();
         }
     }
 
     public void stop() {
         operation.incrementAndGet();
+        clearPreload();
         audioEngine.stop();
         currentTrack = null;
         currentSource = null;
@@ -280,6 +294,79 @@ public final class PlayerController {
                 }));
     }
 
+    private void playTrack(Track track, int skipped) {
+        if (!PlaybackQueue.canAttempt(track)) {
+            clearPreload();
+            skipOrFail(skipped, "playback_error.cubic-cadence.restricted");
+            return;
+        }
+        PlaybackSource ready = preloadedSource;
+        if (track.equals(preloadedTrack) && ready != null) {
+            preloadedTrack = null;
+            preloadedSource = null;
+            playResolved(track, ready);
+            return;
+        }
+        clearPreload();
+        playSelected(track, skipped);
+    }
+
+    private void playResolved(Track track, PlaybackSource source) {
+        long expectedOperation = operation.incrementAndGet();
+        audioEngine.stop();
+        currentTrack = track;
+        currentSource = source;
+        lastError = null;
+        endedHandled = false;
+        state = PlaybackState.BUFFERING;
+        audioEngine.play(source);
+    }
+
+    private void maybePreloadNext() {
+        if (sessionSupplier.get().isEmpty()) {
+            return;
+        }
+        Track next = queue.peekNextAfterEnd();
+        if (next == null || next.equals(preloadedTrack)) {
+            return;
+        }
+        preloadedTrack = next;
+        preloadedSource = null;
+        audioEngine.cancelPreload();
+        preloadSource(next);
+    }
+
+    private void preloadSource(Track track) {
+        if (!PlaybackQueue.canAttempt(track)) {
+            return;
+        }
+        AuthSession session = sessionSupplier.get().orElse(null);
+        if (session == null) {
+            return;
+        }
+        AudioQuality quality = qualitySupplier.get();
+        if (quality == AudioQuality.LOSSLESS) {
+            return;
+        }
+        provider.resolvePlaybackSource(session, track.trackId(), quality)
+                .whenComplete((source, throwable) -> callbackExecutor.execute(() -> {
+                    if (!track.equals(preloadedTrack)) {
+                        return;
+                    }
+                    if (throwable != null || source == null) {
+                        return;
+                    }
+                    preloadedSource = source;
+                    audioEngine.preload(source);
+                }));
+    }
+
+    private void clearPreload() {
+        preloadedTrack = null;
+        preloadedSource = null;
+        audioEngine.cancelPreload();
+    }
+
     private void skipOrFail(int skipped, String message) {
         if (skipped + 1 < Math.max(1, queue.tracks().size())) {
             Track next = queue.next();
@@ -294,6 +381,7 @@ public final class PlayerController {
 
     private void stopAtQueueEnd() {
         operation.incrementAndGet();
+        clearPreload();
         audioEngine.stop();
         currentSource = null;
         endedHandled = true;
