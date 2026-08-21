@@ -1,5 +1,50 @@
 # Changelog
 
+## 2026-08-21 15:23:38 - 新增功能（同步歌词与可复用正在播放 HUD）
+
+- **变更概述**：新增按播放时间逐行同步的歌词能力，以及平台无关的游戏内正在播放 HUD；HUD 按确认稿在左侧显示封面和歌曲信息，底部同一行左侧高亮当前歌词、右侧弱化下一行，并允许整体关闭或分别选择显示内容。
+- **修改文件**：
+  - `src/main/java/com/cubiccadence/model/LyricLine.java`、`SyncedLyrics.java`、`PlaybackSource.java`
+  - `src/main/java/com/cubiccadence/lyrics/LrcParser.java`
+  - `src/main/java/com/cubiccadence/provider/MusicProvider.java`
+  - `src/client/java/com/cubiccadence/client/lyrics/LyricsLoadState.java`、`LyricsManager.java`
+  - `src/client/java/com/cubiccadence/client/ui/hud/NowPlayingSource.java`、`NowPlayingSnapshot.java`、`PlayerNowPlayingSource.java`、`NowPlayingHudElement.java`
+  - `src/client/java/com/cubiccadence/client/provider/netease/NeteaseApiClient.java`、`NeteaseMusicProvider.java`
+  - `src/client/java/com/cubiccadence/client/playback/PlayerController.java`
+  - `src/client/java/com/cubiccadence/client/config/ModConfig.java`
+  - `src/client/java/com/cubiccadence/client/ui/screen/MusicLibraryScreen.java`、`MusicSettingsScreen.java`、`HudSettingsScreen.java`
+  - `src/client/java/com/cubiccadence/client/CubicCadenceClient.java`
+  - `src/client/resources/assets/cubic-cadence/lang/zh_cn.json`、`en_us.json`
+  - `src/test/java/com/cubiccadence/lyrics/LrcParserTest.java`
+  - `src/test/java/com/cubiccadence/client/lyrics/LyricsManagerTest.java`
+  - `src/test/java/com/cubiccadence/client/provider/netease/NeteaseApiClientTest.java`
+  - `src/test/java/com/cubiccadence/client/playback/PlayerControllerTest.java`
+  - `README.md`、`README.en.md`、`docs/design.md`、`CHANGELOG.md`
+- **变更内容**：
+  - 扩展 `MusicProvider` 的统一歌词契约，网易云实现按需调用 api-enhanced `/lyric/new`；普通歌词和翻译按时间戳对齐，支持 LRC 偏移、多时间戳、不同小数精度和异常行降级；
+  - 新增最多缓存 64 首的内存歌词管理器，以请求代次阻止快速切歌后的迟到响应污染当前歌词；歌词不批量同步、不持久化、不影响播放失败边界；
+  - 为试听播放源保留原曲时间轴起点，歌词使用“本地播放进度 + 试听起点”高亮，HUD 进度继续显示试听片段自身进度；
+  - 新增 `NowPlayingSource -> NowPlayingSnapshot -> NowPlayingHudElement` 平台无关工具边界，HUD 不依赖网易云 JSON，后续平台可提供相同快照直接复用；
+  - 使用 Fabric 26.2 `HudElementRegistry` 注册左上角紧凑面板；打开其他界面或 F3 时隐藏，跟随 F1 原版 HUD 隐藏条件；
+  - 新增 HUD 设置子页，支持总开关以及封面、歌名、作者、进度、歌词五项独立配置并持久化；退出登录改由 `PlayerController.stop()` 同步清理 HUD 状态。
+- **风险**：`/lyric/new` 为第三方逆向接口，字段可能漂移；当前采用宽容解析和无歌词降级。第一版只实现逐行高亮，不解析逐字 `yrc`。真实字体宽度、GUI 缩放、HUD 图层冲突、试听时间轴和连续切歌体验仍需在游戏内使用真实账号人工验收。
+- **验证结果**：`.\gradlew.bat build --no-daemon` 构建成功，58 项测试、0 失败；本次新增 LRC 解析、翻译对齐、无歌词、歌词缓存、迟到响应、试听时间轴和网易云响应映射测试均通过。线上 `https://cub.cubiccadence.top/lyric/new?id=1824020871` 返回 `code=200`，并确认存在普通歌词、逐字歌词和翻译字段；未输出歌词正文。开发客户端成功启动，Mod、Fabric HUD API、资源与 OpenAL 初始化正常；Windows 自动化无法激活 Minecraft 窗口，因此真实歌曲播放、设置点击和 HUD 视觉仍保留为人工验收项。
+
+## 2026-08-21 14:19:04 - 修复问题（二维码授权状态长时间不更新）
+
+- **变更概述**：修复网易云二维码扫码并确认后，Mod 仍可能等待接近 2 分钟才登录成功的问题；二维码登录相关请求现在会主动绕过 `api-enhanced` 的 2 分钟响应缓存。
+- **修改文件**：
+  - `src/client/java/com/cubiccadence/client/provider/netease/NeteaseAuthClient.java`
+  - `src/test/java/com/cubiccadence/client/provider/netease/NeteaseAuthClientTest.java`（新增）
+  - `CHANGELOG.md`
+- **变更内容**：
+  - 为 `/login/qr/key`、`/login/qr/create` 和每次 `/login/qr/check` 请求添加动态毫秒时间戳，避免相同 URL 持续命中首次返回的 `801` 或 `802` 缓存；
+  - 使用线程安全的单调递增缓存标识，确保同一毫秒内生成的连续请求仍具有不同 URL；
+  - 将二维码状态轮询间隔从 1 秒调整为 3 秒，与 `api-enhanced` 自带二维码登录页面一致，在及时获取状态的同时降低上游接口限流风险；
+  - 新增进程内 HTTP 回归测试，验证 key、create、连续三次 check 请求的时间戳存在且互不相同，并覆盖 `801（等待扫码）→ 802（已扫码）→ 803（已授权）` 状态映射与 Cookie 会话生成。
+- **风险**：二维码状态检查不再由服务端缓存吸收，会真实到达上游接口；通过 3 秒轮询间隔控制请求频率。未修改 Cookie 格式、凭据存储、认证状态机、界面或音乐库逻辑。
+- **验证结果**：`.\gradlew.bat test --tests com.cubiccadence.client.provider.netease.NeteaseAuthClientTest --no-daemon` 与 `.\gradlew.bat test --no-daemon` 均构建成功；真实手机扫码体验仍需在游戏中进行人工验收，预期确认授权后约 0–3 秒加网络耗时完成登录。
+
 ## 2026-08-20 22:35:31 - 优化代码（歌单同步改为有界并发翻页）
 
 - **变更概述**：将登录后歌单列表的同步从「串行逐页翻页」改为「首屏串行 + 剩余页有界并发」，在 `playlistCount` 总数已知时最多同时拉取 4 页，显著降低歌单较多时的首次加载等待。

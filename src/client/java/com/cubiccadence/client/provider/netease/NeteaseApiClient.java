@@ -8,8 +8,10 @@ import com.cubiccadence.model.PlaybackAccess;
 import com.cubiccadence.model.PlaybackSource;
 import com.cubiccadence.model.PlaylistOwnership;
 import com.cubiccadence.model.PlaylistSummary;
+import com.cubiccadence.model.SyncedLyrics;
 import com.cubiccadence.model.Track;
 import com.cubiccadence.model.UserProfile;
+import com.cubiccadence.lyrics.LrcParser;
 import com.cubiccadence.provider.PageRequest;
 import com.cubiccadence.provider.AudioQuality;
 import com.cubiccadence.provider.PlaylistPage;
@@ -161,6 +163,19 @@ public final class NeteaseApiClient {
                                 quality,
                                 throwable
                         );
+                    }
+                });
+    }
+
+    public CompletableFuture<SyncedLyrics> getLyrics(String trackId) {
+        if (trackId == null || trackId.isBlank()) {
+            throw new IllegalArgumentException("trackId must not be blank");
+        }
+        return getJson("/lyric/new", Map.of("id", trackId))
+                .thenApply(body -> parseLyrics(body, trackId))
+                .whenComplete((lyrics, throwable) -> {
+                    if (throwable != null) {
+                        LOGGER.warn("Cubic Cadence lyric lookup failed: trackId={}", trackId, throwable);
                     }
                 });
     }
@@ -319,9 +334,11 @@ public final class NeteaseApiClient {
                 : System.currentTimeMillis() + Math.max(1L, expiresInSeconds - 5L) * 1000L;
         JsonObject trial = optionalObject(data, "freeTrialInfo");
         long playableDuration = Math.max(0L, optionalLong(data, "time", 0L));
+        long timelineOffset = 0L;
         if (trial != null) {
             long start = Math.max(0L, optionalLong(trial, "start", 0L));
             long end = Math.max(start, optionalLong(trial, "end", start));
+            timelineOffset = start;
             if (end > start) {
                 playableDuration = end - start;
             }
@@ -334,7 +351,20 @@ public final class NeteaseApiClient {
                 actualQuality,
                 bitrate,
                 trial == null ? PlaybackAccess.FULL : PlaybackAccess.TRIAL,
-                playableDuration
+                playableDuration,
+                timelineOffset
+        );
+    }
+
+    static SyncedLyrics parseLyrics(JsonObject body, String trackId) {
+        requireSuccess(body);
+        JsonObject original = optionalObject(body, "lrc");
+        JsonObject translated = optionalObject(body, "tlyric");
+        return LrcParser.parse(
+                NeteaseMusicProvider.PROVIDER_ID,
+                trackId,
+                original == null ? "" : optionalString(original, "lyric"),
+                translated == null ? "" : optionalString(translated, "lyric")
         );
     }
 

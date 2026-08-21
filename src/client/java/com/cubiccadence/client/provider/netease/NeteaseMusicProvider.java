@@ -4,6 +4,7 @@ import com.cubiccadence.auth.AuthSession;
 import com.cubiccadence.auth.AuthorizationChallenge;
 import com.cubiccadence.auth.AuthorizationResult;
 import com.cubiccadence.model.PlaybackSource;
+import com.cubiccadence.model.SyncedLyrics;
 import com.cubiccadence.model.UserProfile;
 import com.cubiccadence.provider.AudioQuality;
 import com.cubiccadence.provider.MusicProvider;
@@ -83,6 +84,11 @@ public class NeteaseMusicProvider implements MusicProvider {
             AudioQuality quality
     ) {
         return apiClient.resolvePlaybackSource(session, trackId, quality);
+    }
+
+    @Override
+    public CompletableFuture<SyncedLyrics> getLyrics(AuthSession session, String trackId) {
+        return apiClient.getLyrics(trackId);
     }
 
     @Override

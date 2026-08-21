@@ -4,6 +4,7 @@ import com.cubiccadence.auth.AuthSession;
 import com.cubiccadence.auth.AuthorizationChallenge;
 import com.cubiccadence.auth.AuthorizationResult;
 import com.cubiccadence.model.PlaybackSource;
+import com.cubiccadence.model.SyncedLyrics;
 import com.cubiccadence.model.UserProfile;
 
 import java.util.concurrent.CompletableFuture;
@@ -42,6 +43,12 @@ public interface MusicProvider {
             String trackId,
             AudioQuality quality
     );
+
+    default CompletableFuture<SyncedLyrics> getLyrics(AuthSession session, String trackId) {
+        return CompletableFuture.failedFuture(
+                new UnsupportedOperationException("lyrics are not supported by this provider")
+        );
+    }
 
     CompletableFuture<Void> logout(AuthSession session);
 }

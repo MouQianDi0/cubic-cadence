@@ -29,6 +29,8 @@ Cubic Cadence（方律）是一款面向 Minecraft 26.2 的 Fabric 客户端模�
 - **本地 MP3 播放**：内置 JavaSound MP3 解码器，无需原生依赖即可解码为 PCM。
 - **播放控制**：播放、暂停、停止、上一首、下一首、进度与音量调节。
 - **播放模式**：顺序播放、单曲循环、列表循环、随机播放。
+- **同步歌词 HUD**：正常游玩时显示封面、歌名、作者、播放进度，以及横向排列的当前高亮歌词和弱化下一行歌词。
+- **可配置 HUD**：可整体关闭 HUD，也可分别选择是否显示封面、歌名、作者、进度和歌词；配置在重启游戏后保留。
 - **音质选择**：标准、较高、极高；无损流式解码暂不支持。
 - **独立音量**：可分别调节方律音量与原版音乐音量，并可禁用原版背景音乐。
 - **封面与缓存**：远程封面解码与本地缓存。
@@ -101,19 +103,19 @@ IDE 的配置与运行方式请参考 [Fabric 官方文档](https://docs.fabricm
 
 ### 音乐库主页
 
-![音乐库主页](docs/screenshots/music-library.jpg)
+### ![音乐库主页](docs\screenshots\music-library.jpg)
 
 ### 扫码登录
 
-![扫码登录](docs/screenshots/login-qr.jpg)
+![扫码登录](docs\screenshots\login-qr.jpg)
 
 ### 歌单详情
 
-![歌单详情](docs/screenshots/playlist-detail.png)
+![歌单详情](docs\screenshots\playlist-detail.png)
 
 ### 设置界面
 
-![设置界面](docs/screenshots/settings.png)
+![设置界面](docs\screenshots\settings.png)
 
 ## 目录结构
 

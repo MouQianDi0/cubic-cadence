@@ -13,7 +13,8 @@ public record PlaybackSource(
         AudioQuality quality,
         Integer bitrate,
         PlaybackAccess access,
-        long playableDurationMs
+        long playableDurationMs,
+        long timelineOffsetMs
 ) {
     public PlaybackSource {
         if (uri == null || uri.getScheme() == null) {
@@ -26,5 +27,6 @@ public record PlaybackSource(
         }
         access = access == null ? PlaybackAccess.FULL : access;
         playableDurationMs = Math.max(0L, playableDurationMs);
+        timelineOffsetMs = Math.max(0L, timelineOffsetMs);
     }
 }

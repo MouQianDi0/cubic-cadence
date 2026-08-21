@@ -19,6 +19,7 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * HTTP client for the independently deployed {@code api-enhanced} service.
@@ -29,12 +30,13 @@ public final class NeteaseAuthClient {
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
     private static final long SESSION_TTL_MS = Duration.ofDays(7).toMillis();
     private static final long QRCODE_TTL_MS = Duration.ofMinutes(5).toMillis();
-    private static final long POLL_INTERVAL_MS = 1_000L;
+    private static final long POLL_INTERVAL_MS = 3_000L;
     private static final int MAX_RESPONSE_BYTES = 256 * 1024;
     private static final Gson GSON = new Gson();
 
     private final URI baseUri;
     private final HttpClient httpClient;
+    private final AtomicLong lastCacheBuster = new AtomicLong();
 
     public NeteaseAuthClient(URI baseUri) {
         this(baseUri, HttpClient.newBuilder()
@@ -49,13 +51,13 @@ public final class NeteaseAuthClient {
     }
 
     public CompletableFuture<AuthorizationChallenge> beginLogin() {
-        return getJson("/login/qr/key", Map.of())
+        return getJson("/login/qr/key", cacheBustingQuery(Map.of()))
                 .thenCompose(keyBody -> {
                     String unikey = field(keyBody, "unikey");
                     if (unikey == null || unikey.isBlank()) {
                         throw new GatewayException("api-enhanced returned no QR key");
                     }
-                    return getJson("/login/qr/create", Map.of("key", unikey))
+                    return getJson("/login/qr/create", cacheBustingQuery(Map.of("key", unikey)))
                             .thenApply(createBody -> {
                                 String qrUrl = field(createBody, "qrurl");
                                 if (qrUrl == null || qrUrl.isBlank()) {
@@ -70,7 +72,7 @@ public final class NeteaseAuthClient {
     }
 
     public CompletableFuture<AuthorizationResult> pollAuthorization(String unikey) {
-        return getJson("/login/qr/check", Map.of("key", unikey))
+        return getJson("/login/qr/check", cacheBustingQuery(Map.of("key", unikey)))
                 .thenApply(body -> {
                     int code = intField(body, "code", 800);
                     return switch (code) {
@@ -106,6 +108,15 @@ public final class NeteaseAuthClient {
     public CompletableFuture<Void> logout(AuthSession session) {
         return getJson("/logout", Map.of("cookie", session.cookie()))
                 .thenApply(ignored -> null);
+    }
+
+    private Map<String, String> cacheBustingQuery(Map<String, String> query) {
+        Map<String, String> freshQuery = new LinkedHashMap<>(query);
+        long timestamp = lastCacheBuster.updateAndGet(previous ->
+                Math.max(System.currentTimeMillis(), previous + 1L)
+        );
+        freshQuery.put("timestamp", Long.toString(timestamp));
+        return freshQuery;
     }
 
     private CompletableFuture<JsonObject> getJson(String path, Map<String, String> query) {

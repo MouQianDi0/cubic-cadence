@@ -36,7 +36,9 @@ public final class MusicSettingsScreen extends Screen {
     @Override
     protected void init() {
         int left = (this.width - CONTROL_WIDTH) / 2;
-        int top = Math.max(46, this.height / 2 - 55);
+        int rowHeight = Button.DEFAULT_HEIGHT + CONTROL_GAP;
+        int contentHeight = Button.DEFAULT_HEIGHT * 6 + CONTROL_GAP * 5;
+        int top = Math.max(40, (this.height - contentHeight) / 2);
         double vanillaMusicVolume = getVanillaMusicVolume();
         if (vanillaMusicVolume > MIN_AUDIBLE_VOLUME) {
             lastNonZeroVanillaMusicVolume = vanillaMusicVolume;
@@ -51,7 +53,7 @@ public final class MusicSettingsScreen extends Screen {
         ));
         this.vanillaMusicVolumeSlider = this.addRenderableWidget(new VanillaMusicVolumeSlider(
                 left,
-                top + Button.DEFAULT_HEIGHT + CONTROL_GAP,
+                top + rowHeight,
                 CONTROL_WIDTH,
                 Button.DEFAULT_HEIGHT,
                 getVanillaMusicOption(),
@@ -63,7 +65,7 @@ public final class MusicSettingsScreen extends Screen {
                                 Component.translatable("checkbox.cubic-cadence.disable_vanilla_music"),
                                 this.font
                         )
-                        .pos(left, top + (Button.DEFAULT_HEIGHT + CONTROL_GAP) * 2)
+                        .pos(left, top + rowHeight * 2)
                         .maxWidth(CONTROL_WIDTH)
                         .selected(vanillaMusicVolume <= MIN_AUDIBLE_VOLUME)
                         .onValueChange((checkbox, selected) -> handleVanillaMusicToggle(selected))
@@ -73,17 +75,23 @@ public final class MusicSettingsScreen extends Screen {
                 Button.builder(audioQualityMessage(), button -> cycleAudioQuality())
                         .bounds(
                                 left,
-                                top + (Button.DEFAULT_HEIGHT + CONTROL_GAP) * 3,
+                                top + rowHeight * 3,
                                 CONTROL_WIDTH,
                                 Button.DEFAULT_HEIGHT
                         )
                         .build()
         );
         this.addRenderableWidget(
+                Button.builder(Component.translatable("button.cubic-cadence.hud_settings"), button ->
+                                this.minecraft.setScreenAndShow(new HudSettingsScreen(this)))
+                        .bounds(left, top + rowHeight * 4, CONTROL_WIDTH, Button.DEFAULT_HEIGHT)
+                        .build()
+        );
+        this.addRenderableWidget(
                 Button.builder(Component.translatable("button.cubic-cadence.done"), button -> onClose())
                         .bounds(
                                 left,
-                                top + (Button.DEFAULT_HEIGHT + CONTROL_GAP) * 4,
+                                top + rowHeight * 5,
                                 CONTROL_WIDTH,
                                 Button.DEFAULT_HEIGHT
                         )

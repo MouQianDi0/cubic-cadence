@@ -89,6 +89,13 @@ public final class PlayerController {
         return audioEngine.getPositionMs();
     }
 
+    /** Position on the original track timeline, including any trial-clip start offset. */
+    public long getTimelinePositionMs() {
+        PlaybackSource source = currentSource;
+        long offset = source == null ? 0L : source.timelineOffsetMs();
+        return Math.max(0L, audioEngine.getPositionMs() + offset);
+    }
+
     public long getDurationMs() {
         long engineDuration = audioEngine.getDurationMs();
         return engineDuration > 0L || currentTrack == null ? engineDuration : currentTrack.durationMs();
