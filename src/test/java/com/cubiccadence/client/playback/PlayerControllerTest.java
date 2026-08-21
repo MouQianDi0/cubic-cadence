@@ -108,7 +108,8 @@ class PlayerControllerTest {
                 AudioQuality.STANDARD,
                 192000,
                 PlaybackAccess.FULL,
-                60_000L
+                60_000L,
+                0L
         );
         provider.sources.put("1", CompletableFuture.completedFuture(expired));
         controller.play(track("1"));
@@ -140,6 +141,30 @@ class PlayerControllerTest {
         assertEquals(resolveCountBeforeFailure, provider.resolveCount);
     }
 
+    @Test
+    void exposesOriginalTimelinePositionForTrialLyrics() {
+        FakeProvider provider = new FakeProvider();
+        FakeEngine engine = new FakeEngine();
+        PlayerController controller = controller(provider, engine, Optional.of(SESSION));
+        PlaybackSource trial = new PlaybackSource(
+                URI.create("https://media.example/trial.mp3"),
+                "audio/mpeg",
+                System.currentTimeMillis() + 60_000L,
+                Map.of(),
+                AudioQuality.STANDARD,
+                192000,
+                PlaybackAccess.TRIAL,
+                30_000L,
+                45_000L
+        );
+        provider.sources.put("1", CompletableFuture.completedFuture(trial));
+        controller.play(track("1"));
+        engine.positionMs = 5_000L;
+
+        assertEquals(50_000L, controller.getTimelinePositionMs());
+        assertEquals(5_000L, controller.getPositionMs());
+    }
+
     private static PlayerController controller(
             FakeProvider provider,
             FakeEngine engine,
@@ -168,13 +193,15 @@ class PlayerControllerTest {
                 AudioQuality.STANDARD,
                 192000,
                 PlaybackAccess.FULL,
-                60_000L
+                60_000L,
+                0L
         );
     }
 
     private static final class FakeEngine implements PlaybackEngine {
         private PlaybackState state = PlaybackState.IDLE;
         private PlaybackSource played;
+        private long positionMs;
 
         @Override public void play(PlaybackSource source) { played = source; state = PlaybackState.BUFFERING; }
         @Override public void pause() { state = PlaybackState.PAUSED; }
@@ -185,7 +212,7 @@ class PlayerControllerTest {
         @Override public float getVolume() { return 1.0f; }
         @Override public PlaybackState getState() { return state; }
         @Override public String getLastError() { return null; }
-        @Override public long getPositionMs() { return 0L; }
+        @Override public long getPositionMs() { return positionMs; }
         @Override public long getDurationMs() { return played == null ? 0L : played.playableDurationMs(); }
         @Override public boolean isSeekSupported() { return false; }
     }

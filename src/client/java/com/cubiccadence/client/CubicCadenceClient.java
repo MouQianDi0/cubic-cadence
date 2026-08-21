@@ -5,10 +5,13 @@ import com.cubiccadence.client.auth.WindowsDpapiTokenStore;
 import com.cubiccadence.client.config.ModConfig;
 import com.cubiccadence.client.library.MusicLibraryManager;
 import com.cubiccadence.client.library.PlaylistDetailManager;
+import com.cubiccadence.client.lyrics.LyricsManager;
 import com.cubiccadence.client.playback.AudioEngine;
 import com.cubiccadence.client.playback.JavaSoundAudioDecoder;
 import com.cubiccadence.client.playback.PlayerController;
 import com.cubiccadence.client.ui.screen.MusicLibraryScreen;
+import com.cubiccadence.client.ui.hud.NowPlayingHudElement;
+import com.cubiccadence.client.ui.hud.PlayerNowPlayingSource;
 import com.cubiccadence.client.ui.texture.RemoteTextureCache;
 import com.cubiccadence.client.provider.UnavailableMusicProvider;
 import com.cubiccadence.client.provider.netease.NeteaseMusicProvider;
@@ -18,6 +21,8 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.VanillaHudElements;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.Identifier;
@@ -40,6 +45,7 @@ public class CubicCadenceClient implements ClientModInitializer {
     private static MusicLibraryManager libraryManager;
     private static PlaylistDetailManager playlistDetailManager;
     private static PlayerController playerController;
+    private static LyricsManager lyricsManager;
 
     public static KeyMapping openLibraryKey;
 
@@ -57,6 +63,12 @@ public class CubicCadenceClient implements ClientModInitializer {
                 AUDIO_ENGINE,
                 Minecraft.getInstance()::execute
         );
+        lyricsManager = new LyricsManager(
+                musicProvider,
+                authManager::getSession,
+                Minecraft.getInstance()::execute
+        );
+        registerNowPlayingHud();
         authManager.restoreSession().exceptionally(throwable -> {
             LOGGER.warn("Cubic Cadence could not restore the saved login session");
             return null;
@@ -68,6 +80,7 @@ public class CubicCadenceClient implements ClientModInitializer {
             libraryManager.close();
             playlistDetailManager.close();
             playerController.stop();
+            lyricsManager.close();
             authManager.close();
             REMOTE_TEXTURE_CACHE.close();
             AUDIO_ENGINE.close();
@@ -150,12 +163,24 @@ public class CubicCadenceClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             AUDIO_ENGINE.tick();
             playerController.tick();
+            lyricsManager.tick(playerController.getCurrentTrack());
             libraryManager.tick();
             playlistDetailManager.tick();
             while (openLibraryKey.consumeClick()) {
                 openMusicLibrary(client);
             }
         });
+    }
+
+    private void registerNowPlayingHud() {
+        HudElementRegistry.attachElementAfter(
+                VanillaHudElements.BOSS_BAR,
+                id("now_playing_hud"),
+                new NowPlayingHudElement(
+                        new PlayerNowPlayingSource(playerController, lyricsManager),
+                        REMOTE_TEXTURE_CACHE
+                )
+        );
     }
 
     private void openMusicLibrary(Minecraft client) {

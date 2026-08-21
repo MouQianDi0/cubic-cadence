@@ -25,6 +25,11 @@ public class ModConfig {
 
     private float volume = 1.0f;
     private boolean hudEnabled = true;
+    private boolean hudShowCover = true;
+    private boolean hudShowTitle = true;
+    private boolean hudShowArtist = true;
+    private boolean hudShowProgress = true;
+    private boolean hudShowLyrics = true;
     private AudioQuality audioQuality = AudioQuality.STANDARD;
     private int lastTestTrackIndex;
     private String apiEnhancedBaseUrl = "https://cub.cubiccadence.top/";
@@ -55,6 +60,51 @@ public class ModConfig {
 
     public void setHudEnabled(boolean enabled) {
         this.hudEnabled = enabled;
+        save();
+    }
+
+    public boolean isHudShowCover() {
+        return hudShowCover;
+    }
+
+    public void setHudShowCover(boolean hudShowCover) {
+        this.hudShowCover = hudShowCover;
+        save();
+    }
+
+    public boolean isHudShowTitle() {
+        return hudShowTitle;
+    }
+
+    public void setHudShowTitle(boolean hudShowTitle) {
+        this.hudShowTitle = hudShowTitle;
+        save();
+    }
+
+    public boolean isHudShowArtist() {
+        return hudShowArtist;
+    }
+
+    public void setHudShowArtist(boolean hudShowArtist) {
+        this.hudShowArtist = hudShowArtist;
+        save();
+    }
+
+    public boolean isHudShowProgress() {
+        return hudShowProgress;
+    }
+
+    public void setHudShowProgress(boolean hudShowProgress) {
+        this.hudShowProgress = hudShowProgress;
+        save();
+    }
+
+    public boolean isHudShowLyrics() {
+        return hudShowLyrics;
+    }
+
+    public void setHudShowLyrics(boolean hudShowLyrics) {
+        this.hudShowLyrics = hudShowLyrics;
         save();
     }
 
@@ -98,6 +148,21 @@ public class ModConfig {
             }
             if (root.has("hudEnabled")) {
                 this.hudEnabled = root.get("hudEnabled").getAsBoolean();
+            }
+            if (root.has("hudShowCover")) {
+                this.hudShowCover = root.get("hudShowCover").getAsBoolean();
+            }
+            if (root.has("hudShowTitle")) {
+                this.hudShowTitle = root.get("hudShowTitle").getAsBoolean();
+            }
+            if (root.has("hudShowArtist")) {
+                this.hudShowArtist = root.get("hudShowArtist").getAsBoolean();
+            }
+            if (root.has("hudShowProgress")) {
+                this.hudShowProgress = root.get("hudShowProgress").getAsBoolean();
+            }
+            if (root.has("hudShowLyrics")) {
+                this.hudShowLyrics = root.get("hudShowLyrics").getAsBoolean();
             }
             if (root.has("audioQuality")) {
                 this.audioQuality = parseAudioQuality(root.get("audioQuality").getAsString());

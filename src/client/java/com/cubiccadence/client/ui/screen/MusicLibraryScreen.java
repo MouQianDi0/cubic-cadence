@@ -600,7 +600,7 @@ public class MusicLibraryScreen extends Screen {
         this.minecraft.setScreenAndShow(new ConfirmScreen(
                 confirmed -> {
                     if (confirmed) {
-                        this.audioEngine.stop();
+                        this.playerController.stop();
                         this.libraryManager.clearPrivateData();
                         CubicCadenceClient.getPlaylistDetailManager().clear();
                         this.textureCache.clear();

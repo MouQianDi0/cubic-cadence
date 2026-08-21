@@ -733,6 +733,16 @@ public final class PlaylistDetailScreen extends Screen {
 
 Minecraft 声道通过一段静音静态缓冲取得游戏管理的 OpenAL Source。切换到在线流时必须在声音线程依次停止 Source、将 `AL_BUFFER` 设为 0、释放静音引导缓冲、挂载 `AudioStream` 队列并重新播放；OpenAL 不允许静态 `AL_BUFFER` 与 `AL_BUFFERS_QUEUED` 同时存在。挂载后以 `AL_BUFFERS_QUEUED > 0` 作为成功条件，失败时关闭流并进入 `ERROR`，不得由声音 tick 无限重复补充无效缓冲。
 
+### 9.11 同步歌词与平台无关 HUD
+
+`MusicProvider.getLyrics(session, trackId)` 是跨平台歌词契约。网易云实现按当前播放歌曲调用 api-enhanced `/lyric/new`，将 `lrc.lyric` 与 `tlyric.lyric` 解析为按时间排序的 `SyncedLyrics / LyricLine`；第一版只做逐行同步，不解析 `yrc` 逐字卡拉 OK。歌词按需获取并限制在最多 64 首的内存 LRU 中，不批量抓取歌单歌词、不写磁盘、不输出歌词正文到日志。无歌词、纯音乐和歌词请求失败只让歌词区域降级，不改变播放状态。
+
+`LyricsManager` 以 `providerId + trackId` 标识请求，切歌、停止和关闭客户端时递增请求代次，迟到响应不得覆盖当前歌曲。歌词高亮直接使用播放器时间轴进行二分查找：当前行是最后一个 `startTimeMs <= positionMs` 的条目，下一行是其后继。试听源额外保留 `PlaybackSource.timelineOffsetMs`，歌词时间为本地播放进度加试听片段在原曲中的起点，HUD 进度仍使用试听片段自身进度。
+
+HUD 工具分为 `NowPlayingSource -> NowPlayingSnapshot -> NowPlayingHudElement`。渲染器只依赖统一 `Track`、播放状态、时间与歌词文本，不导入网易云实现；未来音乐平台只需实现 Provider 歌词能力并提供相同 Now Playing 快照即可复用。Fabric `HudElementRegistry` 将该元素挂在原版 Boss Bar 之后，跟随 F1 隐藏；正常游戏画面左上角显示半透明面板，封面位于左侧，歌名、作者和进度条位于右侧，底部同一行左侧高亮当前歌词、右侧弱化下一行。打开其他 Screen 或 F3 调试覆盖层时不显示。
+
+`HudSettingsScreen` 提供 HUD 总开关及封面、歌名、作者、进度、歌词五个独立选项，写入 `config/cubic-cadence.json`。旧配置缺少新字段时全部默认开启。退出登录必须通过 `PlayerController.stop()` 同时清除音频、当前歌曲和 HUD 状态。
+
 ## 10. 与网易云接口的映射
 
 | 项目模块或方法 | 对应接口能力 |
@@ -746,6 +756,7 @@ Minecraft 声道通过一段静音静态缓冲取得游戏管理的 OpenAL Sourc
 | `MusicProvider.getPlaylistTracks()` | NCM-LIB-003、NCM-LIB-004、NCM-TRACK-001 |
 | `MusicProvider.search()` | NCM-SEARCH-001 至 NCM-SEARCH-003 |
 | `MusicProvider.resolvePlaybackSource()` | NCM-PLAY-001、NCM-PLAY-002 |
+| `MusicProvider.getLyrics()` | api-enhanced `/lyric/new` |
 
 网易云多用户 API 已因个人开发者限制而放弃官方接入，改走 `NeteaseCloudMusicApiEnhanced/api-enhanced` 逆向库；编码时以该库实际接口为准，并保留本段所述合规风险提示。
 
@@ -756,7 +767,7 @@ Minecraft 声道通过一段静音静态缓冲取得游戏管理的 OpenAL Sourc
 3. 阶段 2：本地音频播放验证（OpenAL 与解码库）。
 4. 阶段 3：网易云登录与令牌生命周期（客户端直连 `api-enhanced` 服务，会话改为 Cookie 模型）。
 5. 阶段 4：歌单同步与音乐库。
-6. 阶段 5：在线歌曲播放。
+6. 阶段 5：在线歌曲播放、同步歌词与通用正在播放 HUD。
 7. 阶段 6：稳定性与发布准备。
 
 ## 12. 参考资料

@@ -29,6 +29,8 @@ Third-party library: <https://github.com/NeteaseCloudMusicApiEnhanced/api-enhanc
 - **Local MP3 playback**: bundled JavaSound MP3 decoder, decoding to PCM with no native dependency.
 - **Playback controls**: play, pause, stop, previous, next, plus progress and volume adjustment.
 - **Playback modes**: sequential, repeat-one, repeat-all, and shuffle.
+- **Synchronized lyric HUD**: while playing, show cover art, title, artist, progress, a highlighted current lyric, and a dimmed next lyric in one compact horizontal panel.
+- **Configurable HUD**: disable the HUD entirely or independently toggle cover art, title, artist, progress, and lyrics; choices persist across restarts.
 - **Audio quality**: standard, higher, and highest; lossless streaming is not yet supported.
 - **Independent volume**: adjust the mod volume and vanilla music volume separately, and optionally disable vanilla background music.
 - **Cover art & cache**: remote cover decoding and local caching.

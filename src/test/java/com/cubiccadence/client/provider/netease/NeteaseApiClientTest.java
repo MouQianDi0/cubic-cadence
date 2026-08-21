@@ -5,6 +5,7 @@ import com.cubiccadence.model.Availability;
 import com.cubiccadence.model.PlaylistOwnership;
 import com.cubiccadence.model.PlaybackAccess;
 import com.cubiccadence.model.PlaybackSource;
+import com.cubiccadence.model.SyncedLyrics;
 import com.cubiccadence.model.UserProfile;
 import com.cubiccadence.provider.AudioQuality;
 import com.cubiccadence.provider.PlaylistSummaryPage;
@@ -192,6 +193,7 @@ class NeteaseApiClientTest {
         assertEquals(320000, source.bitrate());
         assertEquals(PlaybackAccess.FULL, source.access());
         assertEquals(185000L, source.playableDurationMs());
+        assertEquals(0L, source.timelineOffsetMs());
         assertTrue(source.requestHeaders().isEmpty());
         assertTrue(source.expiresAtEpochMs() > before);
     }
@@ -208,6 +210,7 @@ class NeteaseApiClientTest {
 
         assertEquals(PlaybackAccess.TRIAL, source.access());
         assertEquals(30000L, source.playableDurationMs());
+        assertEquals(30000L, source.timelineOffsetMs());
         assertThrows(
                 NeteaseApiClient.ApiException.class,
                 () -> NeteaseApiClient.parsePlaybackSource(
@@ -215,6 +218,34 @@ class NeteaseApiClientTest {
                         AudioQuality.STANDARD
                 )
         );
+    }
+
+    @Test
+    void mapsOriginalAndTranslatedSynchronizedLyrics() {
+        SyncedLyrics lyrics = NeteaseApiClient.parseLyrics(JsonParser.parseString("""
+                {
+                  "code": 200,
+                  "lrc": {"lyric": "[00:01.00]第一行\\n[00:03.50]第二行"},
+                  "tlyric": {"lyric": "[00:03.50]Second line"},
+                  "yrc": {"lyric": "[1000,500](1000,500,0)逐字"}
+                }
+                """).getAsJsonObject(), "42");
+
+        assertEquals("netease", lyrics.providerId());
+        assertEquals("42", lyrics.trackId());
+        assertEquals(2, lyrics.lines().size());
+        assertEquals("", lyrics.lines().getFirst().translatedText());
+        assertEquals("Second line", lyrics.lines().getLast().translatedText());
+    }
+
+    @Test
+    void treatsMissingLyricsAsAValidEmptyResult() {
+        SyncedLyrics lyrics = NeteaseApiClient.parseLyrics(
+                JsonParser.parseString("{\"code\":200,\"pureMusic\":true}").getAsJsonObject(),
+                "43"
+        );
+
+        assertTrue(lyrics.lines().isEmpty());
     }
 
     private static com.google.gson.JsonObject accountJson(int vipType) {
