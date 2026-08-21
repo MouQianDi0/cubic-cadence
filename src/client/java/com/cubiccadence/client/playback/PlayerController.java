@@ -225,7 +225,7 @@ public final class PlayerController {
             }
             return;
         }
-        if (state != PlaybackState.RESOLVING) {
+        if (state != PlaybackState.RESOLVING && state != PlaybackState.PAUSED) {
             state = engineState;
         }
         if (state == PlaybackState.PLAYING) {

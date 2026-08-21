@@ -209,6 +209,25 @@ class PlayerControllerTest {
         assertEquals("/2.mp3", engine.played.uri().getPath());
     }
 
+    @Test
+    void pausedStateIsNotClobberedByBufferingEngineState() {
+        FakeProvider provider = new FakeProvider();
+        FakeEngine engine = new FakeEngine();
+        PlayerController controller = controller(provider, engine, Optional.of(SESSION));
+        provider.sources.put("1", CompletableFuture.completedFuture(source("1")));
+        controller.play(track("1"));
+
+        engine.state = PlaybackState.PLAYING;
+        controller.tick();
+        controller.pause();
+        assertEquals(PlaybackState.PAUSED, controller.getState());
+
+        engine.state = PlaybackState.BUFFERING;
+        controller.tick();
+
+        assertEquals(PlaybackState.PAUSED, controller.getState());
+    }
+
     private static PlayerController controller(
             FakeProvider provider,
             FakeEngine engine,

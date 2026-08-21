@@ -70,6 +70,8 @@ public class AudioEngine implements PlaybackEngine, AutoCloseable {
     private long playbackStartedNanos;
     private long pausedAtNanos;
     private long totalPausedNanos;
+    private volatile boolean gamePaused;
+    private volatile long gamePausedAtNanos;
 
     public AudioEngine(AudioDecoder decoder) {
         this.decoder = Objects.requireNonNull(decoder, "decoder");
@@ -204,16 +206,18 @@ public class AudioEngine implements PlaybackEngine, AutoCloseable {
     }
 
     public void pause() {
-        if (this.state != PlaybackState.PLAYING || this.currentInstance == null) {
+        if ((this.state != PlaybackState.PLAYING && this.state != PlaybackState.BUFFERING)
+                || this.currentInstance == null) {
             return;
         }
-        ChannelAccess.ChannelHandle handle = currentHandle();
-        if (handle == null) {
-            return;
+        if (this.pausedAtNanos == 0L) {
+            this.pausedAtNanos = System.nanoTime();
         }
-        handle.execute(Channel::pause);
-        this.pausedAtNanos = System.nanoTime();
         this.state = PlaybackState.PAUSED;
+        ChannelAccess.ChannelHandle handle = currentHandle();
+        if (handle != null) {
+            handle.execute(Channel::pause);
+        }
     }
 
     public void resume() {
@@ -221,10 +225,9 @@ public class AudioEngine implements PlaybackEngine, AutoCloseable {
             return;
         }
         ChannelAccess.ChannelHandle handle = currentHandle();
-        if (handle == null) {
-            return;
+        if (handle != null) {
+            handle.execute(Channel::unpause);
         }
-        handle.execute(Channel::unpause);
         if (this.pausedAtNanos != 0L) {
             this.totalPausedNanos += System.nanoTime() - this.pausedAtNanos;
             this.pausedAtNanos = 0L;
@@ -289,10 +292,15 @@ public class AudioEngine implements PlaybackEngine, AutoCloseable {
         if (this.playbackStartedNanos == 0L) {
             return 0L;
         }
-        long endNanos = (this.state == PlaybackState.PAUSED || this.state == PlaybackState.BUFFERING)
-                && this.pausedAtNanos != 0L
-                ? this.pausedAtNanos
-                : System.nanoTime();
+        long endNanos;
+        if (this.gamePaused && this.gamePausedAtNanos != 0L) {
+            endNanos = this.gamePausedAtNanos;
+        } else if ((this.state == PlaybackState.PAUSED || this.state == PlaybackState.BUFFERING)
+                && this.pausedAtNanos != 0L) {
+            endNanos = this.pausedAtNanos;
+        } else {
+            endNanos = System.nanoTime();
+        }
         long elapsedNanos = Math.max(0L, endNanos - this.playbackStartedNanos - this.totalPausedNanos);
         return Math.min(this.durationMs, elapsedNanos / 1_000_000L);
     }
@@ -306,6 +314,10 @@ public class AudioEngine implements PlaybackEngine, AutoCloseable {
     }
 
     public void tick() {
+        syncGamePause();
+        if (this.gamePaused) {
+            return;
+        }
         LocalMusicSoundInstance instance = this.currentInstance;
         if (instance == null || (this.state != PlaybackState.PLAYING
                 && this.state != PlaybackState.PAUSED
@@ -338,6 +350,29 @@ public class AudioEngine implements PlaybackEngine, AutoCloseable {
             ChannelAccess.ChannelHandle handle = currentHandle();
             if (handle != null) {
                 handle.execute(Channel::pause);
+            }
+        }
+    }
+
+    private void syncGamePause() {
+        boolean paused = Minecraft.getInstance().isPaused();
+        if (paused == this.gamePaused) {
+            return;
+        }
+        this.gamePaused = paused;
+        JavaSoundStreamingAudioStream stream = this.activeStream;
+        if (paused) {
+            this.gamePausedAtNanos = System.nanoTime();
+            if (stream != null) {
+                stream.pause();
+            }
+        } else {
+            if (this.gamePausedAtNanos != 0L) {
+                this.totalPausedNanos += System.nanoTime() - this.gamePausedAtNanos;
+                this.gamePausedAtNanos = 0L;
+            }
+            if (stream != null) {
+                stream.resume();
             }
         }
     }
@@ -622,6 +657,8 @@ public class AudioEngine implements PlaybackEngine, AutoCloseable {
         this.playbackStartedNanos = 0L;
         this.pausedAtNanos = 0L;
         this.totalPausedNanos = 0L;
+        this.gamePaused = false;
+        this.gamePausedAtNanos = 0L;
     }
 
     private static void closeQuietly(JavaSoundStreamingAudioStream stream) {

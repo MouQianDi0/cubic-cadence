@@ -15,6 +15,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -140,6 +142,53 @@ class JavaSoundStreamingAudioStreamTest {
         stream.close();
     }
 
+    @Test
+    void pauseStopsTheProducerAndResumeContinuesIt() throws Exception {
+        CountingInputStream input = new CountingInputStream();
+        JavaSoundStreamingAudioStream stream = stream(input, 0L);
+        stream.start(producerExecutor);
+
+        AtomicBoolean consuming = new AtomicBoolean(true);
+        ExecutorService consumer = Executors.newSingleThreadExecutor();
+        consumer.submit(() -> {
+            while (consuming.get()) {
+                try {
+                    stream.read(JavaSoundStreamingAudioStream.PCM_CHUNK_BYTES);
+                } catch (Exception ignored) {
+                    return;
+                }
+            }
+        });
+
+        try {
+            waitUntil(() -> input.readCount() > 0);
+            stream.pause();
+            Thread.sleep(100);
+            long readsWhilePaused = input.readCount();
+            Thread.sleep(250);
+            assertEquals(readsWhilePaused, input.readCount());
+
+            stream.resume();
+            waitUntil(() -> input.readCount() > readsWhilePaused);
+        } finally {
+            consuming.set(false);
+            consumer.shutdownNow();
+            stream.close();
+        }
+    }
+
+    @Test
+    void closeWhilePausedDoesNotDeadlock() throws Exception {
+        JavaSoundStreamingAudioStream stream = stream(new InfinitePcmInputStream(), 0L);
+        stream.start(producerExecutor);
+        waitUntil(() -> stream.bufferedChunkCount() >= 1);
+
+        stream.pause();
+
+        assertTimeoutPreemptively(Duration.ofMillis(200), stream::close);
+        assertEquals(JavaSoundStreamingAudioStream.StreamState.CANCELLED, stream.streamState());
+    }
+
     private JavaSoundStreamingAudioStream stream(InputStream input, long expectedDurationMs) {
         AudioInputStream audio = new AudioInputStream(input, FORMAT, -1L);
         return new JavaSoundStreamingAudioStream(audio, audio, expectedDurationMs, cleanupExecutor);
@@ -167,6 +216,45 @@ class JavaSoundStreamingAudioStreamTest {
         @Override
         public int read(byte[] bytes, int offset, int length) throws IOException {
             throw new IOException("simulated network failure");
+        }
+    }
+
+    private static final class InfinitePcmInputStream extends InputStream {
+        private final byte[] pattern = new byte[4_096];
+
+        @Override
+        public int read() {
+            return 0;
+        }
+
+        @Override
+        public int read(byte[] bytes, int offset, int length) {
+            int count = Math.min(length, pattern.length);
+            System.arraycopy(pattern, 0, bytes, offset, count);
+            return count;
+        }
+    }
+
+    private static final class CountingInputStream extends InputStream {
+        private final byte[] pattern = new byte[4_096];
+        private final AtomicLong reads = new AtomicLong();
+
+        @Override
+        public int read() {
+            reads.incrementAndGet();
+            return 0;
+        }
+
+        @Override
+        public int read(byte[] bytes, int offset, int length) {
+            reads.incrementAndGet();
+            int count = Math.min(length, pattern.length);
+            System.arraycopy(pattern, 0, bytes, offset, count);
+            return count;
+        }
+
+        long readCount() {
+            return reads.get();
         }
     }
 

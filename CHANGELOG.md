@@ -1,5 +1,34 @@
 # Changelog
 
+## 2026-08-21 17:46:10 - 修复问题（ESC 暂停后进度条空跑并最终播放失败）
+
+- **变更概述**：修复按 ESC 打开游戏菜单/设置后，音乐被原版暂停但 HUD 进度条继续推进到 100% 并最终弹出“播放失败”的问题。根因是原版暂停只走 `SoundEngine.pauseAllExcept(...)` 停掉 OpenAL 通道，不会经过本 Mod 的 `AudioEngine.pause()`，导致播放挂钟与流式生产线程全程无感知：挂钟继续外推使进度条空跑，生产线程持续填满有界队列后阻塞、网络连接长时间空闲被 CDN 掐断，流进入 `FAILED` 后被误判为播放失败。
+- **修改文件**：
+  - `src/client/java/com/cubiccadence/client/playback/JavaSoundStreamingAudioStream.java`
+  - `src/client/java/com/cubiccadence/client/playback/AudioEngine.java`
+  - `src/test/java/com/cubiccadence/client/playback/JavaSoundStreamingAudioStreamTest.java`
+- **变更内容**：
+  - `JavaSoundStreamingAudioStream` 新增 `pause()`/`resume()`，基于锁 + 条件变量让生产线程在游戏暂停期间挂起、停止解码与读取网络，恢复后继续；`close()` 唤醒被挂起的生产线程，避免暂停中关闭造成死锁；
+  - `AudioEngine` 新增游戏暂停感知：`tick()` 内同步 `Minecraft.getInstance().isPaused()`，暂停沿记录 `gamePausedAtNanos` 并 `stream.pause()`，恢复沿把暂停时长计入 `totalPausedNanos` 并 `stream.resume()`；游戏暂停期间 `tick()` 提前返回，跳过“通道失活→ERROR/ENDED”与缓冲/饥饿判定，避免误报失败；`getPositionMs()` 在游戏暂停时冻结挂钟，进度条立即停止；`resetClock()` 重置游戏暂停态，避免切歌/停止后残留；
+  - 新增 `pauseStopsTheProducerAndResumeContinuesIt`、`closeWhilePausedDoesNotDeadlock` 两个流测试，用计数输入流 + 消费者线程精确验证暂停时停止读输入、恢复后继续读，以及暂停中 `close()` 不死锁。
+- **风险**：中低风险，改动集中在流对象状态机与 `AudioEngine` 的暂停联动。已回归：正常播放、手动暂停/恢复、流 starving 自动缓冲、seek 后暂停均不经过新增游戏暂停分支；`gamePausedAtNanos` 与手动暂停的 `pausedAtNanos` 相互独立、按各自窗口累计，不重复计数。生产线程暂停期间网络连接仍会空闲，超长暂停（超过 CDN 空闲超时）理论上仍可能触发流失败，但普通时长的 ESC 暂停不再复现；该极端场景留作后续可选的“恢复时按当前位置重建流”加固。真实进度/歌词同步与失败边界仍需游戏内使用真实账号人工验收。
+- **验证结果**：`.\gradlew.bat build --no-daemon` 构建成功，全部测试通过（含新增 2 个流测试）。
+
+## 2026-08-21 17:17:42 - 修复问题（暂停后进度条继续推进）
+
+- **变更概述**：修复点击暂停后声音已停但 HUD 进度条仍继续外推到 100% 的问题。根因是暂停只在 `PLAYING` 状态下真正冻结挂钟，`BUFFERING`（流 starving 自动缓冲）阶段点暂停只改了状态标签、没有停下底层时钟，且 `PlayerController.tick()` 会把 `PAUSED` 回写覆盖成 `BUFFERING`/`PLAYING`，导致进度条在无声状态下空跑。
+- **修改文件**：
+  - `src/client/java/com/cubiccadence/client/playback/AudioEngine.java`
+  - `src/client/java/com/cubiccadence/client/playback/PlayerController.java`
+  - `src/test/java/com/cubiccadence/client/playback/PlayerControllerTest.java`
+- **变更内容**：
+  - `AudioEngine.pause()` 门槛从“仅 `PLAYING`”放宽到“`PLAYING` 或 `BUFFERING`”，并在已存在 `pausedAtNanos`（流 starving 自动暂停已记下冻结点）时不覆盖该值；先把 `state` 置为 `PAUSED`，通道存在时才执行 `Channel::pause`，保留 `tick()` 每帧重发 `pause` 的兜底逻辑；
+  - `AudioEngine.resume()` 去掉 `handle == null` 的提前返回，使“时钟已停但通道暂未映射”的场景也能正确解冻并把暂停时长计入 `totalPausedNanos`；
+  - `PlayerController.tick()` 在 `state == PAUSED` 时不跟随引擎状态回写，避免 `PAUSED` 被 `BUFFERING`/`PLAYING` 覆盖，直到 `resume()`、停止、出错或结束才离开 `PAUSED`；
+  - 新增 `PlayerControllerTest.pausedStateIsNotClobberedByBufferingEngineState` 用例，验证 `PAUSED` 不被 `BUFFERING` 引擎态覆盖的不变量。
+- **风险**：改动集中在客户端播放路径，属低风险；正常 `PLAYING` 暂停/恢复、流 starving 自动缓冲与恢复、`seek` 后暂停的分支均未改动。`RESOLVING` 阶段及通道安装前阶段的暂停当前 UI 不可达（暂停按钮在 `BUFFERING`/`RESOLVING` 时为 inactive），本次未做“待暂停”加固，保留为后续可选加固项。真实声音/进度/歌词同步仍需游戏内使用真实账号人工验收。
+- **验证结果**：`.\gradlew.bat build --no-daemon` 构建成功，全部测试通过（含新增用例）。
+
 ## 2026-08-21 16:34:17 - 新增功能（下一首音频与歌词预加载）
 
 - **变更概述**：当前歌曲播放期间，后台提前解析并预打开下一首的在线音频流，同时预取下一首歌词；自然切歌或手动下一首命中预加载时直接复用，减少切歌停顿，实现接近无缝衔接。预加载是纯增强，失败时静默回退到原有实时加载，不改动既有失败、重试、迟到响应语义。

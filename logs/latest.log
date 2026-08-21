@@ -1,2 +1,2 @@
-[16:34:09] [Test worker/WARN]: Cubic Cadence playback rejected: no login session (trackId=1, title=track-1)
-[16:34:09] [Test worker/WARN]: Cubic Cadence playback failed: playback_error.cubic-cadence.session_required (trackId=<none>, title=<none>)
+[17:46:02] [Test worker/WARN]: Cubic Cadence playback rejected: no login session (trackId=1, title=track-1)
+[17:46:02] [Test worker/WARN]: Cubic Cadence playback failed: playback_error.cubic-cadence.session_required (trackId=<none>, title=<none>)
